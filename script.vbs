@@ -592,11 +592,7 @@ End function
 function askConfirmation()
 	choice = WScript.StdIn.ReadLine
 	
-	If choice = "y" Then
-		askConfirmation = True
-	Else
-		askConfirmation = False
-	End If
+	askConfirmation = choice = "y"
 	
 	'print space
 	WScript.Echo ""
