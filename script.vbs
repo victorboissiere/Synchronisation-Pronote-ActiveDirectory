@@ -13,10 +13,19 @@
 '-------------------------------------------------------------------------------------------------------------
 
 Set fso = CreateObject("Scripting.FileSystemObject")
-xmlpath = fso.BuildPath("C:\Users\vboissiere\Google Drive", "\" & "index.xml")
-myLdapPath = "dc=claudel,dc=lan"
+Set objExcel = CreateObject("Excel.Application")
 
-userFriendlyOldDirectory = "Utilisateurs/Anciens Eleves"
+xmlpath = fso.BuildPath("C:\Users\vboissiere\Google Drive", "\" & "index.xml")
+Set excelDoc = objExcel.Workbooks.Open ("C:\Users\vboissiere\Google Drive\pronote script\eleves2014.xlsx")
+myLdapPath = "dc=claudel,dc=lan"
+userFriendlyOldDirectory = "Utilisateurs/Anciens/Anciens Eleves"
+
+'Start foreach excel line with this number
+excelLine = 2
+
+excelLastNameCol = 1
+excelFirstNameCol = 2
+excelClassNameCol = 3
 
 '-------------------------------------------------------------------------------------------------------------
 ' END PARAMETERS
@@ -54,6 +63,7 @@ Do While True
 				'Ask user ID of index and remove it from the XML configuration file
 				removeConfiguration()
 			Case choice = 0
+				objExcel.Quit
 				WScript.Quit
 			Case Else
 				displayError("Not valid")
@@ -77,9 +87,11 @@ Sub sync()
 	'Get all active Directory paths in the XML configuration file
 	Set indexes = getXMLIndexes()
 	
-	'Add path for old Students directory
+	'Add path for old Students directory, the pronote index is empty (thats how we can recognize it)
+	indexes.Item("activeDirectory").Add userFriendlyOldDirectory
+	indexes.Item("uniqueActiveDirectory").Add userFriendlyOldDirectory
+	indexes.Item("pronote").Add ""
 	
-	'Old Students directory pronote index is empty (that is how we can recognize it)
 	
 	WScript.Echo "Indexing Active Directory...."
 	Set activeDirectoryGUID = getActiveDirectoryGUID(indexes.Item("uniqueActiveDirectory"))
@@ -91,13 +103,28 @@ Sub sync()
 	objConnection.Open "Provider=ADsDSOObject;"
 	Set objCommand = CreateObject("ADODB.Command")
 	objCommand.ActiveConnection = objConnection
+
 	
-	'TODO : Verify that category is indexed in the configuration, use .contains()
-	 
-	'search each students
-	Call searchStudent(objCommand, "eric moen", indexes)
+	'Foreach students in excel
+	Do Until objExcel.Cells(excelLine, excelClassNameCol).Value = ""
 	
-	'Close connection
+		'Get the student class in Excel
+		studentClass = objExcel.Cells(excelLine,excelClassNameCol)
+		
+		'If the class exists in the xml configuration file, then search student
+		If indexes.Item("pronote").Contains(studentClass) Then
+			
+			firstName = objExcel.Cells(excelLine,excelFirstNameCol)
+			lastName = objExcel.Cells(excelLine,excelLastNameCol)
+			
+			'search student based on name
+			Call searchStudent(objCommand, firstName & " " & lastName, indexes, studentClass)
+		End If
+		
+		excelLine= excelLine + 1
+	Loop
+	
+	'Close connection to AD
 	objConnection.Close
 	
 End Sub
@@ -108,25 +135,39 @@ Sub createStudent()
 	
 End Sub
 
-'Trigger actions based on the Excel data and the position of the student
-Sub studentExists(pronoteExcelIndex, indexes, posFound)
+'Trigger actions based on the Excel data and the position of the student and its category (active vs old)
+Sub studentExists(pronoteExcelIndex, indexes, posFound, IsOld)
 
-	WScript.Echo "Student Exist..."
+	WScript.Echo "Student Exist... (actions simulated)"
 	
-	WScript.Echo "Trigger corresponding actions... (simulation)"
+	'Check if found in old or active. Last index is the old Path for students because added at the end
+	If posFound = indexes.Item("pronote").Count - 1 Then
+		WScript.Echo "Student was found in old path"
+		
+		If IsOld Then
+			WScript.Echo "Good section"
+		Else
+			WScript.Echo "Wrong section"
+		End If
+		
+	Else	
+		WScript.Echo "Student was found in active path"
+		
+		pronoteADIndex = indexes.Item("pronote").Item(posFound)
 	
-	pronoteADIndex = indexes.Item("pronote").Item(posFound)
-	
-	If pronoteExcelIndex = pronoteAdIndex Then
-		WScript.Echo "Good Section"
-	Else
-		WScript.Echo "Wrong section"
+		If pronoteExcelIndex = pronoteAdIndex Then
+			WScript.Echo "Good Section"
+		Else
+			WScript.Echo "Wrong section"
+		End If
+		
 	End If
+
 	
 End Sub
 
 'Search student. Can be used many times
-Sub searchStudent(objCommand, studentName, indexes)
+Sub searchStudent(objCommand, studentName, indexes, studentClass)
 
 	'Search students in the given configuration indexes (AD paths)
 	For i = 0 To indexes.Item("uniqueActiveDirectory").Count - 1 Step 1
@@ -138,10 +179,16 @@ Sub searchStudent(objCommand, studentName, indexes)
 		  
 		Set objRecordSet = objCommand.Execute
 		 
-		'if student found, stop search and execute subRoutine
-		If objRecordset.RecordCount <> 0 Then
-		    Call studentExists("not set", indexes, i)
+		numberOfMatch = objRecordset.RecordCount
+		
+		'if one student found, stop search and execute subRoutine
+		If numberOfMatch = 1 Then
+		    Call studentExists(studentClass, indexes, i, False)
 		    Exit Sub
+		Else If numberOfMatch > 1 Then
+			WScript.Echo "More than one match, TODO : choose which one"
+			Exit Sub
+			End If
 		End If
 	Next
 
