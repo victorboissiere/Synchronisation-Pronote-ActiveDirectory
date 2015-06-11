@@ -32,8 +32,8 @@ excelDateCol = 8
 'Difference in days between today's date and the date of "date de sortie". Positive integer
 dayDiff = 90
 
-'Does not change anything in ActiveDirectory
-logModeOnly = True
+'Do not change anything in ActiveDirectory
+logModeOnly = False
 
 '-------------------------------------------------------------------------------------------------------------
 ' END PARAMETERS
@@ -43,6 +43,12 @@ logModeOnly = True
 '-------------------------------------------------------------------------------------------------------------
 
 WScript.Echo "SYNCING PROGRAM FOR PRONOTE -- Choose options"
+
+'Needed global var
+textLogWarning = ""
+textLogCreated = ""
+textLogUpdated = ""
+textLogMoved = ""
 
 'Main loop of the program
 Do While True
@@ -71,7 +77,6 @@ Do While True
 				'Ask user ID of index and remove it from the XML configuration file
 				removeConfiguration()
 			Case choice = 0
-				objExcel.Quit
 				WScript.Quit
 			Case Else
 				displayError("Not valid")
@@ -93,12 +98,20 @@ Loop
 'Sync active directory with pronote data
 Sub sync()
 
+	'Reset logs
+	textLogWarning = ""
+	textLogCreated = ""
+	textLogUpdated = ""
+	textLogMoved = ""
+
  	'Open excel document
 	Set excelDoc = objExcel.Workbooks.Open(excelpath)
 	currentLine = excelLine
 	
+
 	'Get all active Directory paths in the XML configuration file
 	Set indexes = getXMLIndexes()
+
 	
 	'Add path for old Students directory, the pronote index is empty (thats how we can recognize it)
 	indexes.Item("activeDirectory").Add userFriendlyOldDirectory
@@ -117,6 +130,7 @@ Sub sync()
 	Set objCommand = CreateObject("ADODB.Command")
 	objCommand.ActiveConnection = objConnection
 
+	WScript.Echo "Updating students..."
 	
 	'Foreach students in excel
 	Do Until objExcel.Cells(currentLine, excelClassNameCol).Value = ""
@@ -138,6 +152,25 @@ Sub sync()
 		currentLine = currentLine + 1
 	Loop
 	
+	WScript.Echo "Done!"
+	
+	If logModeOnly Then
+		WScript.Echo vbLf & vbLf & "LOG MODE ONLY - NO CHANGE IN ACTIVE DIRECTORY"
+		WScript.Echo "------------------------------------------------" & vbLf
+	End If
+	
+	WScript.Echo vbLf & "LIST OF WARNINGS : "
+	WScript.Echo textLogWarning
+	
+	WScript.Echo vbLf & "STUDENTS MOVED : "
+	WScript.Echo textLogMoved
+	
+	WScript.Echo vbLf & "STUDENTS UPDATED : "
+	WScript.Echo textLogUpdated
+	
+	WScript.Echo vbLf & "STUDENTS CREATED : "
+	WScript.Echo textLogCreated
+	
 	'Close connection to AD
 	objConnection.Close
 	
@@ -145,9 +178,36 @@ Sub sync()
 	
 End Sub
 
-Sub createStudent(studentName)
+'Create student based on Excel data
+Sub createStudent(currentLine, indexes, studentCurrentClass)
 
-	WScript.Echo "Creating student "& studentName &" ... (simulation)"
+	firstName = objExcel.Cells(currentLine,excelFirstNameCol).Text
+	lastName = objExcel.Cells(currentLine,excelLastNameCol).Text
+	className = objExcel.Cells(currentLine,excelClassNameCol).Text
+	email = objExcel.Cells(currentLine,excelEmailCol).Text
+	
+	'Get the right activeDirectory position in index
+	activeDirectoryPos = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
+	
+	'Get active directory friendly path
+	friendlyPath = indexes.Item("activeDirectory").Item(activeDirectoryPos)
+	
+	If Not logModeOnly Then
+		
+		Set userObj = getActiveOUDirectory(friendlyPath)
+		
+		If Not userObj Is Nothing Then
+			WScript.Echo "I wrote something here : " & friendlyPath
+		End If
+		
+		'Tomorow userObj iser objOU, do the rest
+		'Set objOU = GetObject("LDAP://OU=Management,dc=fabrikam,dc=com")
+		'Set objUser = objOU.Create("User", "cn= AckermanPilar")
+		'objUser.Put "sAMAccountName", "AckermanPila"
+		'objUser.SetInfo
+	End If
+
+	textLogCreated = textLogCreated & vbLf & firstName & " " & lastName & " in " & friendlyPath
 	
 End Sub
 
@@ -165,7 +225,7 @@ Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, st
 		If IsOld Then
 			'WScript.Echo "Good category"
 		Else
-			WScript.Echo "Wrong category, should be in : " & indexes.Item("activeDirectory").Item(posShouldBeIn)
+			textLogMoved = textLogMoved & vbLf & studentName & " moved to " & indexes.Item("activeDirectory").Item(posShouldBeIn)
 		End If
 		
 		Call updateStudent(student, currentLine)
@@ -174,7 +234,7 @@ Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, st
 		'WScript.Echo studentName & " was found in active path"
 		
 		If IsOld Then
-			WScript.Echo "Wrong category"
+			textLogMoved = textLogMoved & vbLf & studentName & " moved to the anciens"
 		
 		Else
 			'WScript.Echo "Good category"
@@ -184,8 +244,7 @@ Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, st
 			If indexes.Item("activeDirectory").Item(posShouldBeIn) = pronoteAdIndex Then
 				'WScript.Echo "Good section"
 			Else
-				
-				WScript.Echo "Wrong section, should be in : " & indexes.Item("activeDirectory").Item(posShouldBeIn)
+				textLogMoved = textLogMoved & vbLf & studentName & " ("& studentCurrentClass &") moved to " & indexes.Item("activeDirectory").Item(posShouldBeIn)
 			End If
 		End If
 		
@@ -205,7 +264,6 @@ Sub updateStudent(student, currentLine)
 	email = objExcel.Cells(currentLine,excelEmailCol).Text
 	
 	textLog = ""
-	textLogWarning = ""
 	
 	If firstName <> student.FirstName Then
 		textLog = textLog & " firstName: " & firstName
@@ -221,20 +279,15 @@ Sub updateStudent(student, currentLine)
 	
 	'If email not set in pronote, display only a warning
 	If email = "#N/A"  Then
-		textLogWarning = textLogWarning & "WARNING : " & student.cn & " has no email set on Pronote, active directory email untouched"
+		textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has no email set on Pronote, active directory email untouched"
 	Else If email <> student.EmailAddress Then
 		textLog = textLog & " email: " & email
 		End If
 	End If
 	
 	If textLog <> "" Then
-		WScript.Echo student.cn & " updated! " & textLog
+		textLogUpdated = textLogUpdated & vbLf & student.cn & ". " & textLog
 	End If
-	
-	If textLogWarning <> "" Then
-		WScript.Echo vbLf & student.cn & " updated! " & textLog & vbLf
-	End If
-	
 	
 End Sub
 
@@ -273,14 +326,14 @@ Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, student
 		    objRecordSet.Close
 		    Exit Sub
 		Else If numberOfMatch > 1 Then
-			WScript.Echo "More than one match for " & studentName
+			textLogWarning = textLogWarning & vbLf &  "WARNING : More than one match for " & studentName & " (User ignored)"
 			Exit Sub
 			End If
 		End If
 	Next
 
 	'No student found, create student
-	Call createStudent(studentName)
+	Call createStudent(currentLine, indexes,studentCurrentClass)
 	objRecordSet.Close
 End Sub
 
