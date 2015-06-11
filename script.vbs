@@ -16,7 +16,7 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 Set objExcel = CreateObject("Excel.Application")
 
 xmlpath = fso.BuildPath("C:\Users\vboissiere\Google Drive", "\" & "index.xml")
-Set excelDoc = objExcel.Workbooks.Open ("C:\Users\vboissiere\Google Drive\pronote script\eleves2014.xlsx")
+excelpath = "C:\Users\vboissiere\Google Drive\pronote script\elevestest.xlsx"
 myLdapPath = "dc=claudel,dc=lan"
 userFriendlyOldDirectory = "Utilisateurs/Anciens/Anciens Eleves"
 
@@ -25,7 +25,15 @@ excelLine = 2
 
 excelLastNameCol = 1
 excelFirstNameCol = 2
-excelClassNameCol = 3
+excelClassNameCol = 6
+excelEmailCol = 5
+excelDateCol = 8
+
+'Difference in days between today's date and the date of "date de sortie". Positive integer
+dayDiff = 90
+
+'Does not change anything in ActiveDirectory
+logModeOnly = True
 
 '-------------------------------------------------------------------------------------------------------------
 ' END PARAMETERS
@@ -84,6 +92,11 @@ Loop
 
 'Sync active directory with pronote data
 Sub sync()
+
+ 	'Open excel document
+	Set excelDoc = objExcel.Workbooks.Open(excelpath)
+	currentLine = excelLine
+	
 	'Get all active Directory paths in the XML configuration file
 	Set indexes = getXMLIndexes()
 	
@@ -106,76 +119,137 @@ Sub sync()
 
 	
 	'Foreach students in excel
-	Do Until objExcel.Cells(excelLine, excelClassNameCol).Value = ""
+	Do Until objExcel.Cells(currentLine, excelClassNameCol).Value = ""
 	
 		'Get the student class in Excel
-		studentClass = objExcel.Cells(excelLine,excelClassNameCol)
+		studentCurrentClass = objExcel.Cells(currentLine,excelClassNameCol)
+		studentDate = objExcel.Cells(currentLine,excelDateCol)
 		
 		'If the class exists in the xml configuration file, then search student
-		If indexes.Item("pronote").Contains(studentClass) Then
+		If indexes.Item("pronote").Contains(studentCurrentClass) Then
 			
-			firstName = objExcel.Cells(excelLine,excelFirstNameCol)
-			lastName = objExcel.Cells(excelLine,excelLastNameCol)
+			firstName = objExcel.Cells(currentLine,excelFirstNameCol)
+			lastName = objExcel.Cells(currentLine,excelLastNameCol)
 			
 			'search student based on name
-			Call searchStudent(objCommand, firstName & " " & lastName, indexes, studentClass)
+			Call searchStudent(objCommand, firstName & " " & lastName, indexes, studentCurrentClass, studentDate, currentLine)
 		End If
 		
-		excelLine= excelLine + 1
+		currentLine = currentLine + 1
 	Loop
 	
 	'Close connection to AD
 	objConnection.Close
 	
+	objExcel.Quit
+	
 End Sub
 
-Sub createStudent()
+Sub createStudent(studentName)
 
-	WScript.Echo "Creating student... (simulation)"
+	WScript.Echo "Creating student "& studentName &" ... (simulation)"
 	
 End Sub
 
 'Trigger actions based on the Excel data and the position of the student and its category (active vs old)
-Sub studentExists(pronoteExcelIndex, indexes, posFound, IsOld)
+Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, student, currentLine)
 
-	WScript.Echo "Student Exist... (actions simulated)"
+	'WScript.Echo "Student Exist... (actions simulated)"
 	
-	'Check if found in old or active. Last index is the old Path for students because added at the end
-	If posFound = indexes.Item("pronote").Count - 1 Then
-		WScript.Echo "Student was found in old path"
+	posShouldBeIn = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
+	
+	'Check if found in old or active. Last is the old directory
+	If posFound = indexes.Item("uniqueActiveDirectory").Count - 1 Then
+		WScript.Echo studentName & "Student was found in old path"
 		
 		If IsOld Then
-			WScript.Echo "Good section"
+			'WScript.Echo "Good category"
 		Else
-			WScript.Echo "Wrong section"
+			WScript.Echo "Wrong category, should be in : " & indexes.Item("activeDirectory").Item(posShouldBeIn)
 		End If
+		
+		Call updateStudent(student, currentLine)
 		
 	Else	
-		WScript.Echo "Student was found in active path"
+		'WScript.Echo studentName & " was found in active path"
 		
-		pronoteADIndex = indexes.Item("pronote").Item(posFound)
-	
-		If pronoteExcelIndex = pronoteAdIndex Then
-			WScript.Echo "Good Section"
+		If IsOld Then
+			WScript.Echo "Wrong category"
+		
 		Else
-			WScript.Echo "Wrong section"
+			'WScript.Echo "Good category"
+			
+			pronoteADIndex = indexes.Item("uniqueActiveDirectory").Item(posFound)
+		
+			If indexes.Item("activeDirectory").Item(posShouldBeIn) = pronoteAdIndex Then
+				'WScript.Echo "Good section"
+			Else
+				
+				WScript.Echo "Wrong section, should be in : " & indexes.Item("activeDirectory").Item(posShouldBeIn)
+			End If
 		End If
+		
+		Call updateStudent(student, currentLine)
 		
 	End If
 
 	
 End Sub
 
+'Update student data and display it in the console screen
+Sub updateStudent(student, currentLine)
+
+	firstName = objExcel.Cells(currentLine,excelFirstNameCol).Text
+	lastName = objExcel.Cells(currentLine,excelLastNameCol).Text
+	className = objExcel.Cells(currentLine,excelClassNameCol).Text
+	email = objExcel.Cells(currentLine,excelEmailCol).Text
+	
+	textLog = ""
+	textLogWarning = ""
+	
+	If firstName <> student.FirstName Then
+		textLog = textLog & " firstName: " & firstName
+	End If
+	
+	If lastName <> student.LastName Then
+		textLog = textLog & " lastName: " & lastName
+	End If
+	
+	If className <> student.Description Then
+		textLog = textLog & " ClassName: " & className
+	End If
+	
+	'If email not set in pronote, display only a warning
+	If email = "#N/A"  Then
+		textLogWarning = textLogWarning & "WARNING : " & student.cn & " has no email set on Pronote, active directory email untouched"
+	Else If email <> student.EmailAddress Then
+		textLog = textLog & " email: " & email
+		End If
+	End If
+	
+	If textLog <> "" Then
+		WScript.Echo student.cn & " updated! " & textLog
+	End If
+	
+	If textLogWarning <> "" Then
+		WScript.Echo vbLf & student.cn & " updated! " & textLog & vbLf
+	End If
+	
+	
+End Sub
+
 'Search student. Can be used many times
-Sub searchStudent(objCommand, studentName, indexes, studentClass)
+Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, studentDate, currentLine)
+
+	Set uniqueActiveDirectory = indexes.Item("uniqueActiveDirectory")
 
 	'Search students in the given configuration indexes (AD paths)
-	For i = 0 To indexes.Item("uniqueActiveDirectory").Count - 1 Step 1
+	For i = 0 To uniqueActiveDirectory.Count - 1 Step 1
 		
 		'Query for the search
 		objCommand.CommandText = _
-		    "<" & getLdapPath(indexes.Item("uniqueActiveDirectory").Item(i)) & _
-		     ">;(&(objectCategory=person)(objectClass=user)(name=" & studentName & "));samAccountName;subtree"
+		    "<" & getLdapPath(uniqueActiveDirectory.Item(i)) & _
+		     ">;(&(objectCategory=person)(objectClass=user)(name=" & studentName & "));cn;subtree"
 		  
 		Set objRecordSet = objCommand.Execute
 		 
@@ -183,18 +257,31 @@ Sub searchStudent(objCommand, studentName, indexes, studentClass)
 		
 		'if one student found, stop search and execute subRoutine
 		If numberOfMatch = 1 Then
-		    Call studentExists(studentClass, indexes, i, False)
+		
+			studentCN = objRecordSet.Fields("cn").Value
+			
+			rawPath = "LDAP://cn=" & studentCN & "," & getSmallLdapPath(uniqueActiveDirectory.Item(i))
+			
+    		Set student = getActiveOUDDirectoryFromRaw(rawPath, rawPath)
+    		
+    		If Not student Is Nothing Then
+			
+		    	Call studentExists(studentCurrentClass, studentName, indexes, i, studentDate <> "" And DateDiff("d",Now, studentDate) < dayDiff, student, currentLine)
+		    	
+		    End If
+		    
+		    objRecordSet.Close
 		    Exit Sub
 		Else If numberOfMatch > 1 Then
-			WScript.Echo "More than one match, TODO : choose which one"
+			WScript.Echo "More than one match for " & studentName
 			Exit Sub
 			End If
 		End If
 	Next
 
 	'No student found, create student
-	Call createStudent()
-	
+	Call createStudent(studentName)
+	objRecordSet.Close
 End Sub
 
 
@@ -207,8 +294,8 @@ End Sub
 ' ACTIVE DIRECTORY FUNCTIONS
 '-------------------------------------------------------------------------------------------------------------
 
-'get ldap path based on the path written in the configuration XML file
-Function getLdapPath(path)
+'Everything in the LDAP except the beginning
+Function getSmallLdapPath(path)
 
 	'The path should be written as something like "Utilisateurs/Eleves/Eleves du CM2
 	OUarray = Split(path,"/")
@@ -221,38 +308,50 @@ Function getLdapPath(path)
 		ouPath = "ou=" & x & "," & ouPath
 	Next
 	
-	getLdapPath = "LDAP://" & ouPath & myLdapPath
+	getSmallLdapPath = ouPath & myLdapPath
 
 End Function
 
-'Get the folder Object to a Active Directory folder. Return Nothing if path is false
-Function getActiveOUDirectory(path)
-
-	fullPath = getLdapPath(path)
+'get ldap path based on the path written in the configuration XML file
+Function getLdapPath(path)
 	
-	If fullPath <> "" Then
+	getLdapPath = "LDAP://" & getSmallLdapPath(path)
+
+End Function
+
+'Get the folder Object to a Active Directory folder. Return Nothing if path is false, errPath is the path showed in the error message
+Function getActiveOUDDirectoryFromRaw(rawPath, errPath)
+	
+	If rawPath <> "" Then
 	
 		'Check if OU exists, return the OU object if that is the case, else return null
 		On Error Resume Next
 		Dim OUobject
-		Set OUobject = GetObject(fullPath)
+		Set OUobject = GetObject(rawPath)
 		
 		'Display corresponding errors, return null if error(s) else return OU
 		Select Case Err.Number
 		Case 0
-		    Set getActiveOUDirectory = OUobject
+		    Set getActiveOUDDirectoryFromRaw = OUobject
 		Case &h80072030
-		    displayError("OU doesn't exist" & vbLf & vbLf & "Full path : " & fullPath & vbLf)
-		    Set getActiveOUDirectory = Nothing
+		    displayError("OU doesn't exist" & vbLf & vbLf & "Full path : " & errPath & vbLf)
+		    Set getActiveOUDDirectoryFromRaw = Nothing
 		Case Else
-		    displayError("Adding OU failed because OU not valid. Error code : "& Err.Number & vbLf & vbLf & "Full path : " & fullPath & vbLf)
-		    Set getActiveOUDirectory = Nothing
+		    displayError("Adding OU failed because OU not valid. Error code : "& Err.Number & vbLf & vbLf & "Full path : " & errPath & vbLf)
+		    Set getActiveOUDDirectoryFromRaw = Nothing
 		End Select
 	Else
 		displayError("Wrong format path to active Directory")
-		Set getActiveOUDirectory = Nothing
+		Set getActiveOUDDirectoryFromRaw = Nothing
 	End If
 	
+	
+End Function
+
+'Get the path from a friendlyPath like Utilisateurs/Eleves/Eleves du College
+Function getActiveOUDirectory(friendlyPath)
+	
+	Set getActiveOUDirectory = getActiveOUDDirectoryFromRaw(getLdapPath(friendlyPath), friendlyPath)
 
 End Function
 
@@ -262,9 +361,15 @@ Function validateIndex(pronote, activeDirectory)
 	If Len(pronote) <= 1 or Len(activeDirectory) <= 1 Then
 		displayError("Lenght of Pronote index and active directory index should be both greather than 1")
 		validateIndex = False
+	Else
+		'Check if pronote is unique (not already added)
+		Set indexes = getXMLIndexes()
+		validateIndex = indexes("pronote").IndexOf(pronote, 0) = -1
+		
+		If Not validateIndex Then
+			displayError("L'index de pronote doit être unique.")
+		End If
 	End If
-	
-	validateIndex = True
 
 End Function
 
@@ -578,7 +683,7 @@ End Function
 
 'Display error message
 Sub displayError(message)
-	WScript.Echo vbLf & "Error : " & message & vbLf
+	WScript.Echo vbLf & "ERROR : " & message & vbLf
 End Sub
 
 'There is no max function in VBS
