@@ -16,7 +16,7 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 Set objExcel = CreateObject("Excel.Application")
 
 xmlpath = fso.BuildPath("C:\Users\vboissiere\Google Drive", "\" & "index.xml")
-excelpath = "C:\Users\vboissiere\Google Drive\pronote script\elevestest.xlsx"
+excelpath = "C:\Users\vboissiere\Google Drive\pronote script\elevesdetest2.xlsx"
 myLdapPath = "dc=claudel,dc=lan"
 userFriendlyOldDirectory = "Utilisateurs/Anciens/Anciens Eleves"
 
@@ -34,7 +34,6 @@ dayDiff = 90
 
 'Do not change anything in ActiveDirectory
 logModeOnly = False
-
 '-------------------------------------------------------------------------------------------------------------
 ' END PARAMETERS
 
@@ -124,7 +123,6 @@ Sub sync()
 	WScript.Echo "Done!"
 	
 	'Getting needed objects for the search
-	dtStart = TimeValue(Now())
 	Set objConnection = CreateObject("ADODB.Connection")
 	objConnection.Open "Provider=ADsDSOObject;"
 	Set objCommand = CreateObject("ADODB.Command")
@@ -159,17 +157,17 @@ Sub sync()
 		WScript.Echo "------------------------------------------------" & vbLf
 	End If
 	
-	WScript.Echo vbLf & "LIST OF WARNINGS : "
-	WScript.Echo textLogWarning
+	WScript.Echo vbLf & "STUDENTS UPDATED : "
+	WScript.Echo textLogUpdated
 	
 	WScript.Echo vbLf & "STUDENTS MOVED : "
 	WScript.Echo textLogMoved
 	
-	WScript.Echo vbLf & "STUDENTS UPDATED : "
-	WScript.Echo textLogUpdated
-	
 	WScript.Echo vbLf & "STUDENTS CREATED : "
 	WScript.Echo textLogCreated
+	
+	WScript.Echo vbLf & "LIST OF WARNINGS : "
+	WScript.Echo textLogWarning
 	
 	'Close connection to AD
 	objConnection.Close
@@ -192,22 +190,28 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 	'Get active directory friendly path
 	friendlyPath = indexes.Item("activeDirectory").Item(activeDirectoryPos)
 	
+	'Get login for new user
+	login = getLogin(firstName, lastName)
+	
 	If Not logModeOnly Then
 		
 		Set userObj = getActiveOUDirectory(friendlyPath)
 		
 		If Not userObj Is Nothing Then
-			WScript.Echo "I wrote something here : " & friendlyPath
+			Set objUser = userObj.Create("User", "cn= "& firstName & " " & lastName)
+			objUser.Put "firstName", firstName
+			objuser.Put "lastName", lastName
+			objUser.put "mail", email
+			objUser.put "description", className
+			objUser.Put "displayName", firstName & " " & lastName & " " & className
+			objUser.Put "userPrincipalName", login
+			objUser.Put "sAMAccountName", login
+			objUser.SetInfo
 		End If
 		
-		'Tomorow userObj iser objOU, do the rest
-		'Set objOU = GetObject("LDAP://OU=Management,dc=fabrikam,dc=com")
-		'Set objUser = objOU.Create("User", "cn= AckermanPilar")
-		'objUser.Put "sAMAccountName", "AckermanPila"
-		'objUser.SetInfo
 	End If
 
-	textLogCreated = textLogCreated & vbLf & firstName & " " & lastName & " in " & friendlyPath
+	textLogCreated = textLogCreated & vbLf & firstName & " " & lastName & " in " & friendlyPath & ". Login : " & login
 	
 End Sub
 
@@ -302,7 +306,7 @@ Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, student
 		'Query for the search
 		objCommand.CommandText = _
 		    "<" & getLdapPath(uniqueActiveDirectory.Item(i)) & _
-		     ">;(&(objectCategory=person)(objectClass=user)(name=" & studentName & "));cn;subtree"
+		     ">;(&(objectCategory=person)(objectClass=user)(displayName=" & studentName & "*));cn;subtree"
 		  
 		Set objRecordSet = objCommand.Execute
 		 
@@ -346,6 +350,63 @@ End Sub
 
 ' ACTIVE DIRECTORY FUNCTIONS
 '-------------------------------------------------------------------------------------------------------------
+
+'Get login based on student name
+Function getLogin(firstName, lastName)
+
+	'Regex pattern to get a nice login
+	Set objReg = CreateObject("VBScript.RegExp")
+	objReg.Global = True
+	objReg.Pattern = "[^A-Za-z]"
+	
+
+	login = Mid(getURLLikeString(firstName, objReg),1,3) & Mid(getURLLikeString(lastName, objReg),1,3)
+
+	'Declare objects for the search in AD
+	Set objConnection = CreateObject("ADODB.Connection")
+	objConnection.Open "Provider=ADsDSOObject;"
+	Set objCommand = CreateObject("ADODB.Command")
+	objCommand.ActiveConnection = objConnection
+	
+	'if has fewer than 6 characters, add random ones
+	Do While Len(login) < 6
+  		login = login & strRandom()
+	Loop
+	
+	nbText = ""
+	nb = 1
+	
+	'Verify the uniqueness of the login
+	Do 
+	
+	'search query
+	objCommand.CommandText = _
+		    "<LDAP://" & myLdapPath & _
+		     ">;(&(objectCategory=person)(objectClass=user)(sAMAccountName=" & login & nb & "*));cn;subtree"
+		  
+	Set objRecordSet = objCommand.Execute
+			 
+	'get number of students with this username
+	numberOfMatch = objRecordset.RecordCount
+	
+	objRecordSet.Close
+	
+	'next iteration
+	nb = nb + 1
+	nbText = CStr(nb)
+	
+	Loop While numberOfMatch > 0
+	
+	'close connection for the search
+	objConnection.Close
+	
+	If nb > 2 Then
+		getLogin = login
+	Else
+		getLogin = login & nbText
+	End If
+	
+End Function
 
 'Everything in the LDAP except the beginning
 Function getSmallLdapPath(path)
@@ -803,6 +864,25 @@ function askConfirmation()
 	WScript.Echo ""
 	
 End Function
+
+'Random letter for user login
+Function strRandom()
+	Randomize
+    
+    'the random letter
+    strRandom = Mid("abcdefghijklmnopqrstuvwxyz",Int((25) * Rnd + 1) ,1)
+  
+End Function
+
+'Return the text with the objReg (remove all char that match Regex code)
+Function getURLLikeString(txt, objReg)
+	txt = LCase(txt)
+	txt = Replace(txt,"é","e")
+	txt = Replace(txt,"É","e")
+	txt = Replace(txt,"ï","i")
+	getURLLikeString = objReg.Replace(txt,"")
+End Function
+
 
 '-------------------------------------------------------------------------------------------------------------
 ' END UTILITIES FUNCTIONS
