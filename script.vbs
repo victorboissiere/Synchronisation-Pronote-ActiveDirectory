@@ -28,12 +28,13 @@ excelFirstNameCol = 2
 excelClassNameCol = 6
 excelEmailCol = 5
 excelDateCol = 8
+excelNationalNumber = 7
 
 'Difference in days between today's date and the date of "date de sortie". Positive integer
 dayDiff = 90
 
 'Do not change anything in ActiveDirectory
-logModeOnly = False
+logModeOnly = True
 '-------------------------------------------------------------------------------------------------------------
 ' END PARAMETERS
 
@@ -183,6 +184,7 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 	lastName = objExcel.Cells(currentLine,excelLastNameCol).Text
 	className = objExcel.Cells(currentLine,excelClassNameCol).Text
 	email = objExcel.Cells(currentLine,excelEmailCol).Text
+	nationalNumber = objExcel.Cells(currentLine,excelNationalNumber).Text
 	
 	'Get the right activeDirectory position in index
 	activeDirectoryPos = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
@@ -206,12 +208,29 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 			objUser.Put "displayName", firstName & " " & lastName & " " & className
 			objUser.Put "userPrincipalName", login
 			objUser.Put "sAMAccountName", login
+			objUser.Put "physicalDeliveryOfficeName", nationalNumber
 			objUser.SetInfo
 		End If
 		
 	End If
 
 	textLogCreated = textLogCreated & vbLf & firstName & " " & lastName & " in " & friendlyPath & ". Login : " & login
+	
+End Sub
+
+'Move student to the new right path
+Sub moveStudent(student, friendlyPath)
+
+	rawPath = getLdapPath(friendlyPath)
+	
+	'Move student
+	If Not logModeOnly Then
+		objOU.MoveHere _
+    	rawPath, vbNullString
+    End If
+    
+    'log
+	textLogMoved = textLogMoved & vbLf & student.Firstname & " " & student.lastName & " moved to " & friendlyPath
 	
 End Sub
 
@@ -224,31 +243,28 @@ Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, st
 	
 	'Check if found in old or active. Last is the old directory
 	If posFound = indexes.Item("uniqueActiveDirectory").Count - 1 Then
-		WScript.Echo studentName & "Student was found in old path"
 		
-		If IsOld Then
-			'WScript.Echo "Good category"
-		Else
-			textLogMoved = textLogMoved & vbLf & studentName & " moved to " & indexes.Item("activeDirectory").Item(posShouldBeIn)
+		'Move student if should be in active path and is in old path
+		If Not IsOld Then
+			Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn))
 		End If
 		
 		Call updateStudent(student, currentLine)
 		
-	Else	
-		'WScript.Echo studentName & " was found in active path"
+	Else
+		'Active path
 		
 		If IsOld Then
-			textLogMoved = textLogMoved & vbLf & studentName & " moved to the anciens"
+			Call moveStudent(student, indexes.Item("uniqueActiveDirectory").Item(indexes.Item("uniqueActiveDirectory").Count - 1))
 		
 		Else
-			'WScript.Echo "Good category"
+			'Good category
 			
 			pronoteADIndex = indexes.Item("uniqueActiveDirectory").Item(posFound)
 		
-			If indexes.Item("activeDirectory").Item(posShouldBeIn) = pronoteAdIndex Then
-				'WScript.Echo "Good section"
-			Else
-				textLogMoved = textLogMoved & vbLf & studentName & " ("& studentCurrentClass &") moved to " & indexes.Item("activeDirectory").Item(posShouldBeIn)
+			'Wrong section
+			If indexes.Item("activeDirectory").Item(posShouldBeIn) <> pronoteAdIndex Then
+				Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn))
 			End If
 		End If
 		
@@ -266,6 +282,7 @@ Sub updateStudent(student, currentLine)
 	lastName = objExcel.Cells(currentLine,excelLastNameCol).Text
 	className = objExcel.Cells(currentLine,excelClassNameCol).Text
 	email = objExcel.Cells(currentLine,excelEmailCol).Text
+	nationalNumber = objExcel.Cells(currentLine,excelNationalNumber).Text
 	
 	textLog = ""
 	
@@ -287,6 +304,26 @@ Sub updateStudent(student, currentLine)
 	Else If email <> student.EmailAddress Then
 		textLog = textLog & " email: " & email
 		End If
+	End If
+	
+	'If nationalNumber <> student.physicalDeliveryOfficeName Then
+	'	textLog = textLog & " current National Number: " & nationalNumber
+	'End If
+	
+	'save modification only if log mode Only is false
+	If Not logModeOnly Then
+		student.Put "firstName", firstName
+		student.Put "lastName", lastName
+		student.Put "description", className
+		student.Put "physicalDeliveryOfficeName", nationalNumber
+		
+		'No warning on the email
+		If email <> "#N/A" Then
+			student.Put "mail", email
+		End If
+		
+		student.Put "displayName", firstName & " " & lastName & " " & className
+		student.setInfo
 	End If
 	
 	If textLog <> "" Then
