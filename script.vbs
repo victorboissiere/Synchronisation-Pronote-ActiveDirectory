@@ -129,7 +129,7 @@ Sub sync()
 	
 	
 	WScript.Echo "Indexing Active Directory...."
-	Set activeDirectoryGUID = getActiveDirectoryGUID(indexes.Item("uniqueActiveDirectory"))
+	Set activeDirectoryGUID = getActiveDirectoryGUID(indexes.Item("uniqueActiveDirectory"), indexes)
 	WScript.Echo "Done!"
 	
 	'Getting needed objects for the search
@@ -184,8 +184,8 @@ Sub sync()
 	'All students that match the class but that are not in ProNote
 	For Each cn In activeDirectoryGUID
 		Set s = getActiveOUDDirectoryFromRaw(cn, cn)
-		If Not s Is Nothing And indexes.Item("pronote").IndexOf(s.description, 0) <> -1 Then
-			WScript.Echo s.cn & " Classe : " & s.description
+		If Not s Is Nothing Then
+			WScript.Echo s.cn & " Classe : " & s.description 
 		End If
 	Next
 	
@@ -219,7 +219,7 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 		Set userObj = getActiveOUDirectory(friendlyPath)
 		
 		If Not userObj Is Nothing Then
-			Set objUser = userObj.Create("User", "cn="& firstName & " " & lastName)
+			Set objUser = userObj.Create("User", "CN="& firstName & " " & lastName)
 			
 			'Account properties
 			objUser.firstName = firstName
@@ -450,7 +450,7 @@ Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, student
 		
 			studentCN = objRecordSet.Fields("cn").Value
 			
-			rawPath = "LDAP://cn=" & studentCN & "," & getSmallLdapPath(uniqueActiveDirectory.Item(i))
+			rawPath = "LDAP://CN=" & studentCN & "," & getSmallLdapPath(uniqueActiveDirectory.Item(i))
 			
     		Set student = getActiveOUDDirectoryFromRaw(rawPath, rawPath)
     		
@@ -636,7 +636,7 @@ Function validateIndex(pronote, activeDirectory)
 End Function
 
 'Return an array of the user IDs with the corresponding path in the configuration file
-Function getActiveDirectoryGUID(paths)
+Function getActiveDirectoryGUID(paths, indexes)
 	
 	'Create the list
 	Set activeDirectoryGUID = CreateObject("System.Collections.ArrayList")
@@ -651,7 +651,9 @@ Function getActiveDirectoryGUID(paths)
 		'Check if valid and add unique GUID to the list
 		If Not OUs Is Nothing Then
 			For Each user in OUs
-    			activeDirectoryGUID.Add user.ADsPath
+				If indexes.Item("pronote").IndexOf(user.Description, 0) <> -1 Then
+    				activeDirectoryGUID.Add user.ADsPath
+    			End If
 			Next
 		Else
 			removeInConfiguration(i)
