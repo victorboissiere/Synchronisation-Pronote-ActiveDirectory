@@ -15,8 +15,8 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set objExcel = CreateObject("Excel.Application")
 
-xmlpath = fso.BuildPath("C:\Users\adminvictor\Google Drive", "\" & "index.xml")
-excelpath = "C:\Users\adminvictor\Google Drive\pronote script\elevestest.xlsx"
+xmlpath = fso.BuildPath("C:\Users\vboissiere\Google Drive", "\" & "index.xml")
+excelpath = "C:\Users\vboissiere\Google Drive\pronote script\elevestest.xlsx"
 myLdapPath = "DC=claudel,DC=lan"
 userFriendlyOldDirectory = "Utilisateurs/Anciens/Anciens Eleves"
 
@@ -67,6 +67,8 @@ Do While True
 		
 		'Each function verify that the configuration exists in order to run
 		Select Case True
+			Case choice = 0
+				WScript.Quit
 			'Check configuration exists else ask user if he wants to create it
 			Case Not configurationExists()
 			Case choice = 1
@@ -80,8 +82,6 @@ Do While True
 			Case choice = 4
 				'Ask user ID of index and remove it from the XML configuration file
 				removeConfiguration()
-			Case choice = 0
-				WScript.Quit
 			Case Else
 				displayError("Not valid")
 		End Select
