@@ -15,10 +15,15 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set objExcel = CreateObject("Excel.Application")
 
-xmlpath = fso.BuildPath("C:\Users\vboissiere\Google Drive", "\" & "index.xml")
-excelpath = "C:\Users\vboissiere\Google Drive\pronote script\elevesdetest2.xlsx"
-myLdapPath = "dc=claudel,dc=lan"
+xmlpath = fso.BuildPath("C:\Users\adminvictor\Google Drive", "\" & "index.xml")
+excelpath = "C:\Users\adminvictor\Google Drive\pronote script\elevestest.xlsx"
+myLdapPath = "DC=claudel,DC=lan"
 userFriendlyOldDirectory = "Utilisateurs/Anciens/Anciens Eleves"
+
+'Paths in order to create a new student
+profilepath = "\\claudel.lan\partage\profils$\" '(+login added later)
+homeDirectory = "\\claudel.lan\partage\utilisateurs$\"
+homeDrive = "P"
 
 'Start foreach excel line with this number
 excelLine = 2
@@ -31,10 +36,8 @@ excelDateCol = 8
 excelNationalNumber = 7
 
 'Difference in days between today's date and the date of "date de sortie". Positive integer
-dayDiff = 90
+dayDiff = 0
 
-'Do not change anything in ActiveDirectory
-logModeOnly = True
 '-------------------------------------------------------------------------------------------------------------
 ' END PARAMETERS
 
@@ -49,6 +52,7 @@ textLogWarning = ""
 textLogCreated = ""
 textLogUpdated = ""
 textLogMoved = ""
+logModeOnly = True
 
 'Main loop of the program
 Do While True
@@ -103,6 +107,11 @@ Sub sync()
 	textLogCreated = ""
 	textLogUpdated = ""
 	textLogMoved = ""
+	
+	WScript.Echo "Do you want to run the script in production mode ? (y/n)"
+	
+	logModeOnly = Not askConfirmation()
+	
 
  	'Open excel document
 	Set excelDoc = objExcel.Workbooks.Open(excelpath)
@@ -145,7 +154,7 @@ Sub sync()
 			lastName = objExcel.Cells(currentLine,excelLastNameCol)
 			
 			'search student based on name
-			Call searchStudent(objCommand, firstName & " " & lastName, indexes, studentCurrentClass, studentDate, currentLine)
+			Call searchStudent(objCommand, firstName & " " & lastName, indexes, studentCurrentClass, studentDate, currentLine, activeDirectoryGUID)
 		End If
 		
 		currentLine = currentLine + 1
@@ -169,6 +178,16 @@ Sub sync()
 	
 	WScript.Echo vbLf & "LIST OF WARNINGS : "
 	WScript.Echo textLogWarning
+	
+	WScript.Echo vbLf & "LIST OF PEOPLE NOT FOUND IN PRONOTE : " & vbLf
+	
+	'All students that match the class but that are not in ProNote
+	For Each cn In activeDirectoryGUID
+		Set s = getActiveOUDDirectoryFromRaw(cn, cn)
+		If Not s Is Nothing And indexes.Item("pronote").IndexOf(s.description, 0) <> -1 Then
+			WScript.Echo s.cn & " Classe : " & s.description
+		End If
+	Next
 	
 	'Close connection to AD
 	objConnection.Close
@@ -200,16 +219,39 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 		Set userObj = getActiveOUDirectory(friendlyPath)
 		
 		If Not userObj Is Nothing Then
-			Set objUser = userObj.Create("User", "cn= "& firstName & " " & lastName)
-			objUser.Put "firstName", firstName
-			objuser.Put "lastName", lastName
-			objUser.put "mail", email
-			objUser.put "description", className
-			objUser.Put "displayName", firstName & " " & lastName & " " & className
-			objUser.Put "userPrincipalName", login
-			objUser.Put "sAMAccountName", login
-			objUser.Put "physicalDeliveryOfficeName", nationalNumber
+			Set objUser = userObj.Create("User", "cn="& firstName & " " & lastName)
+			
+			'Account properties
+			objUser.firstName = firstName
+			objUser.lastName = lastName
+			objUser.cn = firstName & " " & lastName
+			objUser.mail = email
+			objUser.description = className
+			objUser.displayName = firstName & " " & lastName & " " & className
+			objUser.userPrincipalName = login
+			objUser.sAMAccountName = login
+			objUser.physicalDeliveryOfficeName = nationalNumber
+			objUser.profilePath = profilepath & login
+			objUser.homeDrive = homeDrive
+			objUser.homeDirectory = homedirectory & login
 			objUser.SetInfo
+			
+			'Accounts settings
+			objUser.ChangePassword "", "jl3R86df"
+			objUser.AccountDisabled=False
+			objUser.pwdLastSet=0
+			objUser.SetInfo
+			
+			groupPath = getGroupPath(indexes.Item("group").Item(activeDirectoryPos))
+			
+			
+			Set objGroup = getActiveOUDDirectoryFromRaw(groupPath, groupPath)
+			
+			If Not objGroup Is Nothing Then
+				objGroup.add(objUser.ADsPath)
+			End If
+			
+			
 		End If
 		
 	End If
@@ -220,17 +262,22 @@ End Sub
 
 'Move student to the new right path
 Sub moveStudent(student, friendlyPath)
-
-	rawPath = getLdapPath(friendlyPath)
 	
-	'Move student
-	If Not logModeOnly Then
-		objOU.MoveHere _
-    	rawPath, vbNullString
-    End If
-    
-    'log
-	textLogMoved = textLogMoved & vbLf & student.Firstname & " " & student.lastName & " moved to " & friendlyPath
+	Set ou = getActiveOUDirectory(friendlyPath)
+	
+	If Not ou Is Nothing Then
+	
+		'log
+		textLogMoved = textLogMoved & vbLf & student.Firstname & " " & student.lastName & " moved to " & friendlyPath
+		
+		
+		'Move student
+		If Not logModeOnly Then
+			WScript.Echo "move here " & student.ADsPath
+			ou.MoveHere student.ADsPath, vbNullString
+	    End If
+		
+	End If
 	
 End Sub
 
@@ -246,17 +293,20 @@ Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, st
 		
 		'Move student if should be in active path and is in old path
 		If Not IsOld Then
+			Call updateStudent(student, currentLine, indexes, studentCurrentClass)
 			Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn))
+			Exit Sub
 		End If
 		
-		Call updateStudent(student, currentLine)
+		Call updateStudent(student, currentLine, indexes, studentCurrentClass)
 		
 	Else
 		'Active path
 		
 		If IsOld Then
+			Call updateStudent(student, currentLine, indexes, studentCurrentClass)
 			Call moveStudent(student, indexes.Item("uniqueActiveDirectory").Item(indexes.Item("uniqueActiveDirectory").Count - 1))
-		
+			Exit Sub
 		Else
 			'Good category
 			
@@ -264,11 +314,13 @@ Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, st
 		
 			'Wrong section
 			If indexes.Item("activeDirectory").Item(posShouldBeIn) <> pronoteAdIndex Then
+				Call updateStudent(student, currentLine, indexes, studentCurrentClass)
 				Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn))
+				Exit Sub
 			End If
 		End If
 		
-		Call updateStudent(student, currentLine)
+		Call updateStudent(student, currentLine, indexes, studentCurrentClass)
 		
 	End If
 
@@ -276,7 +328,7 @@ Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, st
 End Sub
 
 'Update student data and display it in the console screen
-Sub updateStudent(student, currentLine)
+Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 
 	firstName = objExcel.Cells(currentLine,excelFirstNameCol).Text
 	lastName = objExcel.Cells(currentLine,excelLastNameCol).Text
@@ -284,7 +336,34 @@ Sub updateStudent(student, currentLine)
 	email = objExcel.Cells(currentLine,excelEmailCol).Text
 	nationalNumber = objExcel.Cells(currentLine,excelNationalNumber).Text
 	
+	pos = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
+	shouldBeInGroupPath = LCase(getGroupPath(indexes.Item("group").Item(pos)))
+	
+	
+	'foreach group. If equal than 1, compare, if 0 or more than 1, warning
+	Set group = student.Groups
+	Dim lastGroup
+	nbGroupPath = 0
+	
+	For Each g In group
+		Set lastGroup = g
+		nbGroup = nbGroup + 1
+	Next
+	
+	If nbGroup <= 1 Then
+		lastGroupPath = LCase(lastGroup.ADsPath)
+	End If
+	
 	textLog = ""
+	
+	If nbGroup <= 1 And StrComp(shouldBeInGroupPath, lastGroupPath, 1) <> 0 Then
+		textLog = textLog & " Group: " & shouldBeInGroupPath
+	Else If nbGroup > 1 Then
+				textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
+		End If
+	End If
+	
+	
 	
 	If firstName <> student.FirstName Then
 		textLog = textLog & " firstName: " & firstName
@@ -312,17 +391,34 @@ Sub updateStudent(student, currentLine)
 	
 	'save modification only if log mode Only is false
 	If Not logModeOnly Then
-		student.Put "firstName", firstName
-		student.Put "lastName", lastName
-		student.Put "description", className
-		student.Put "physicalDeliveryOfficeName", nationalNumber
+		student.firstName = firstName
+		student.lastName = lastName
+		student.description = className
+		student.physicalDeliveryOfficeName = nationalNumber
 		
 		'No warning on the email
 		If email <> "#N/A" Then
-			student.Put "mail", email
+			student.mail = email
 		End If
 		
-		student.Put "displayName", firstName & " " & lastName & " " & className
+		'Change group
+		If nbGroup <= 1 And StrComp(shouldBeInGroupPath, lastGroupPath, 1) <> 0 Then
+		
+			groupPath = getGroupPath(indexes.Item("group").Item(pos))
+			Set objGroup = getActiveOUDDirectoryFromRaw(groupPath, groupPath)
+			
+			If Not objGroup Is Nothing Then
+			
+				'delete old Group if exists
+				If nbGroup = 1 Then
+        			lastGroup.remove(student.ADsPath)
+        		End If
+        	
+				objGroup.add(student.ADsPath)
+			End If
+		End If
+		
+		student.displayName = firstName & " " & lastName & " " & className
 		student.setInfo
 	End If
 	
@@ -333,7 +429,7 @@ Sub updateStudent(student, currentLine)
 End Sub
 
 'Search student. Can be used many times
-Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, studentDate, currentLine)
+Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, studentDate, currentLine, activeDirectoryGUID)
 
 	Set uniqueActiveDirectory = indexes.Item("uniqueActiveDirectory")
 
@@ -359,9 +455,10 @@ Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, student
     		Set student = getActiveOUDDirectoryFromRaw(rawPath, rawPath)
     		
     		If Not student Is Nothing Then
-			
+    			'Remove from index
+    			activeDirectoryGUID.remove(student.ADspath)
 		    	Call studentExists(studentCurrentClass, studentName, indexes, i, studentDate <> "" And DateDiff("d",Now, studentDate) < dayDiff, student, currentLine)
-		    	
+		    	'WScript.Echo student.Cn
 		    End If
 		    
 		    objRecordSet.Close
@@ -411,33 +508,32 @@ Function getLogin(firstName, lastName)
 	Loop
 	
 	nbText = ""
-	nb = 1
+	nb = 0
 	
 	'Verify the uniqueness of the login
 	Do 
-	
-	'search query
-	objCommand.CommandText = _
-		    "<LDAP://" & myLdapPath & _
-		     ">;(&(objectCategory=person)(objectClass=user)(sAMAccountName=" & login & nb & "*));cn;subtree"
-		  
-	Set objRecordSet = objCommand.Execute
-			 
-	'get number of students with this username
-	numberOfMatch = objRecordset.RecordCount
-	
-	objRecordSet.Close
-	
-	'next iteration
-	nb = nb + 1
-	nbText = CStr(nb)
+		nb = nb + 1
+		'search query
+		objCommand.CommandText = _
+			    "<LDAP://" & myLdapPath & _
+			     ">;(&(objectCategory=person)(objectClass=user)(sAMAccountName=" & login & nbText & "*));cn;subtree"
+			  
+		Set objRecordSet = objCommand.Execute
+				 
+		'get number of students with this username
+		numberOfMatch = objRecordset.RecordCount
+		
+		objRecordSet.Close
+		
+		'next iteration
+		nbText = CStr(nb)
 	
 	Loop While numberOfMatch > 0
 	
 	'close connection for the search
 	objConnection.Close
 	
-	If nb > 2 Then
+	If nb <= 1 Then
 		getLogin = login
 	Else
 		getLogin = login & nbText
@@ -456,7 +552,7 @@ Function getSmallLdapPath(path)
 	
 	'concatenate in reverse order for nicer software (more user friendly)
 	For Each x In OUarray
-		ouPath = "ou=" & x & "," & ouPath
+		ouPath = "OU=" & x & "," & ouPath
 	Next
 	
 	getSmallLdapPath = ouPath & myLdapPath
@@ -468,6 +564,21 @@ Function getLdapPath(path)
 	
 	getLdapPath = "LDAP://" & getSmallLdapPath(path)
 
+End Function
+
+'Get group path (add CN in the front)
+Function getGroupPath(path)
+
+	OUarray = Split(path, "/")
+	
+	ouPath = ""
+	
+	For i = 0 To UBound(OUarray) - 1 Step 1
+		ouPath = "OU=" & OUarray(i) & "," & ouPath
+	Next
+	
+	getGroupPath = "LDAP://CN=" & OUarray(UBound(OUarray)) & "," & ouPath  & myLdapPath
+	
 End Function
 
 'Get the folder Object to a Active Directory folder. Return Nothing if path is false, errPath is the path showed in the error message
@@ -536,10 +647,11 @@ Function getActiveDirectoryGUID(paths)
 		'Get OU
 		Set OUs = getActiveOUDirectory(paths.Item(i))
 		
+		
 		'Check if valid and add unique GUID to the list
 		If Not OUs Is Nothing Then
 			For Each user in OUs
-    			activeDirectoryGUID.Add user.GUID
+    			activeDirectoryGUID.Add user.ADsPath
 			Next
 		Else
 			removeInConfiguration(i)
@@ -569,15 +681,18 @@ Sub displayConfiguration()
 	'Create lists to display in the table
 	Set pronote = CreateObject("System.Collections.ArrayList")
 	Set activeDirectory = CreateObject("System.Collections.ArrayList")
+	Set group = CreateObject("System.Collections.ArrayList")
 	
 	'Adding MENU ITEM
 	pronote.Add "Pronote index"
 	activeDirectory.Add "Active directory path"
+	group.Add "Group"
 	
 	'Variables to render the correct lenght for the table
 	Dim maxPronoteLenght
 	maxPronoteLenght = Len(pronote.item(0))
 	maxActiveDirectoryLength = Len(activeDirectory.item(0))
+	maxGroupLength = Len(group.item(0))
 	
 	'Get nodes
 	Set nodes = xmlDoc.documentElement.SelectNodes("//Index")
@@ -594,18 +709,21 @@ Sub displayConfiguration()
 		'Get tag name in the XML
 		p = Index.getElementsByTagName("Pronote")(0).text
 		a = Index.getElementsByTagName("ActiveDirectory")(0).text
+		g = Index.getElementsByTagName("Group")(0).text
 		
 		'Display spacing for the table
 		maxPronoteLength = max(maxPronoteLenght, Len(p))
 		maxActiveDirectoryLength = max(maxActiveDirectoryLength ,Len(a))
+		maxGroupLength = max(maxGroupLength ,Len(g))
 		
 		'Add elements to the corresponding list
 		pronote.Add p
 		activeDirectory.Add a
+		group.Add g
 	Next
 	
 	'Generate top and bottom border
-	bottomAndTopBorder = " " & generateTextBorder(maxPronoteLength + maxActiveDirectoryLength + 10)
+	bottomAndTopBorder = " " & generateTextBorder(maxPronoteLength + maxActiveDirectoryLength + maxGroupLength + 13)
 	
 	'Top Border
 	WScript.Echo bottomAndTopBorder
@@ -622,8 +740,10 @@ Sub displayConfiguration()
 		spaceCol1 = getTableSpace(id, max(pronote.Count / 10 + 2, Len(id)))
 		spaceCol2 = getTableSpace(pronote.Item(i), maxPronoteLength)
 		spaceCol3 = getTableSpace(activeDirectory.Item(i), maxActiveDirectoryLength)
+		spaceCol4 = getTableSpace(group.Item(i), maxGroupLength)
+		
 	
-		WScript.Echo "| " & id & spaceCol1 & " | " & pronote.Item(i) & spaceCol2 & " | " & activeDirectory.Item(i) & spaceCol3 & " |"
+		WScript.Echo "| " & id & spaceCol1 & " | " & pronote.Item(i) & spaceCol2 & " | " & activeDirectory.Item(i) & spaceCol3 & " | " & group.Item(i) & spaceCol4 & " |"
 		
 		If i = 0 Then WScript.Echo bottomAndTopBorder End If
 		
@@ -645,15 +765,22 @@ Sub writeConfiguration()
 	WScript.Echo vbLf & "Corresponding path in Active Directory : "
 	activeDirectory = WScript.StdIn.ReadLine
 	
+	WScript.Echo vbLf & "Corresponding group in Active Directory : "
+	group = WScript.StdIn.ReadLine
+	
 	WScript.Echo vbLf
 	
 	'Validate data
 	If validateIndex(pronote, activeDirectory) Then
+	
+		groupDirectory = getGroupPath(group)
+	
+		Set OUgroup = getActiveOUDDirectoryFromRaw(groupDirectory, groupDirectory)
 		
 		Set OUdirectory = getActiveOUDirectory(activeDirectory)
 		
 		'Check that OU directory is valid (so function does not return null)
-		If Not OUdirectory Is Nothing Then
+		If Not OUdirectory Is Nothing And Not OUgroup Is Nothing Then
 			
 			'Adding directory to the XML file
 			Set xmlDoc = _
@@ -676,6 +803,11 @@ Sub writeConfiguration()
 			Set objFieldValue = _
 			  xmlDoc.createElement("ActiveDirectory")
 			objFieldValue.Text = activeDirectory
+			objRecord.appendChild objFieldValue
+			
+			Set objFieldValue = _
+			  xmlDoc.createElement("Group")
+			objFieldValue.Text = group
 			objRecord.appendChild objFieldValue
 			  
 			'Save the file
@@ -797,6 +929,7 @@ Function getXMLIndexes()
 	'Create lists
 	Set activeDirectory = CreateObject("System.Collections.ArrayList")
 	Set pronote = CreateObject("System.Collections.ArrayList")
+	Set group = CreateObject("System.Collections.ArrayList")
 	
 	'Unique list in order to allow search functions to foreach only once
 	Set uniqueActiveDirectory = CreateObject("System.Collections.ArrayList")
@@ -808,6 +941,7 @@ Function getXMLIndexes()
 		'Add to the list the AD index
 		activeDirectory.Add a
 		pronote.Add Index.getElementsByTagName("Pronote")(0).text
+		group.Add Index.getElementsByTagName("Group")(0).text
 		
 		If Not uniqueActiveDirectory.Contains(a) Then
 			uniqueActiveDirectory.Add a
@@ -818,6 +952,7 @@ Function getXMLIndexes()
 	Set d= CreateObject("Scripting.Dictionary")
 	d.Add "activeDirectory", activeDirectory
 	d.Add "pronote", pronote
+	d.Add "group", group
 	d.Add "uniqueActiveDirectory", uniqueActiveDirectory
 	
 	Set getXMLIndexes = d
@@ -852,10 +987,10 @@ End Function
 Function getTableSpace(text, maxSize)
 	spaceToAdd = ""
 	
-	offset = maxSize - Len(text) - 1
+	offset = maxSize - Len(text)
 	
 	If offset > 0 Then
-		For i = 0 To offset Step 1
+		For i = 0 To offset - 1 Step 1
 			spaceToAdd = spaceToAdd & " "
 		Next
 	End If
