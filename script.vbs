@@ -15,8 +15,8 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set objExcel = CreateObject("Excel.Application")
 
-xmlpath = fso.BuildPath("C:\Users\vboissiere\Google Drive", "\" & "index.xml")
-excelpath = "C:\Users\vboissiere\Google Drive\pronote script\elevestest.xlsx"
+xmlpath = fso.BuildPath("C:\Users\adminvictor\Google Drive", "\" & "index.xml")
+excelpath = "C:\Users\adminvictor\Google Drive\pronote script\elevesdetest2.xlsx"
 myLdapPath = "DC=claudel,DC=lan"
 
 'Paths in order to create a new student
@@ -37,6 +37,9 @@ excelNationalNumber = 7
 'Difference in days between today's date and the date of "date de sortie". Positive integer
 dayDiff = 0
 
+'WARNING : be careful to respect Active Directory requirements or students will have no password (but account will be disabled)
+defaultPassword = "Passw0rd"
+
 'OLD PATH
 userFriendlyOldDirectory = "Utilisateurs/Anciens/Anciens Eleves"
 Dim oldSubDirectories(1)
@@ -56,6 +59,7 @@ textLogWarning = ""
 textLogCreated = ""
 textLogUpdated = ""
 textLogMoved = ""
+textLogError = ""
 logModeOnly = True
 
 'Main loop of the program
@@ -113,6 +117,7 @@ Sub sync()
 	textLogCreated = ""
 	textLogUpdated = ""
 	textLogMoved = ""
+	textLogError = ""
 	
 	WScript.Echo "Do you want to run the script in production mode ? (y/n)"
 	
@@ -199,6 +204,9 @@ Sub sync()
 	WScript.Echo vbLf & "LIST OF WARNINGS : "
 	WScript.Echo textLogWarning
 	
+	WScript.Echo vbLf & "LIST OF ERROR : "
+	WScript.Echo textLogError
+	
 	WScript.Echo vbLf & "LIST OF PEOPLE NOT FOUND IN PRONOTE : " & vbLf
 	
 	'All students that match the class but that are not in ProNote
@@ -227,7 +235,7 @@ Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, student
 		'Query for the search
 		objCommand.CommandText = _
 		    "<" & getLdapPath(uniqueActiveDirectory.Item(i)) & _
-		     ">;(&(objectCategory=person)(objectClass=user)(displayName=" & studentName & "*));cn;subtree"
+		     ">;(&(objectCategory=person)(objectClass=user)(displayName=" & studentName & "*));cn;onelevel"
 		  
 		Set objRecordSet = objCommand.Execute
 		 
@@ -349,11 +357,23 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 			objUser.homeDirectory = homedirectory & login
 			objUser.SetInfo
 			
-			'Accounts settings
-			objUser.ChangePassword "", "jl3R86df"
+			'VBS equivalent try catch, error if password does not meet active directory requirements
+			On Error Resume Next
+			Err.Clear
+			
+			objUser.setPassword(defaultPassword)
+			
+			If Err.Number <> 0 Then
+				textLogError = textLogError & vbLf &  "ERROR : Password does not match active Directory requirements." & _ 
+				vbLf & firstName & " " & lastName & " student created with no password but account is disabled."
+			End If
+			
 			objUser.AccountDisabled=False
 			objUser.pwdLastSet=0
 			objUser.SetInfo
+
+			
+			'Accounts settings
 			
 			groupPath = getGroupPath(indexes.Item("group").Item(activeDirectoryPos))
 			
@@ -495,9 +515,42 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 	
 End Sub
 
-Sub resetPasswordIn(activeDirectoryPath, password)
+'Reset password in an active Directory Path for student of the rightClass
+Sub resetPasswordIn(activeDirectoryPath, password, studentClass)
 
-	WScript.Echo "Simulation for password : " & password
+	WScript.Echo vbLf & vbLf & "The student of the class " & studentClass & " will be asked to change their passwords"
+
+	WScript.Echo vbLf & "LIST OF USERS UPDATED WITH NEW PASSWORD : " & vbLf	
+	
+	Set ou = getActiveOUDirectory(activeDirectorypath)
+	
+	'Verify OU exists
+	If Not ou Is Nothing Then
+			'For each student check if match the class
+			For Each student in ou
+				If student.Description = studentClass Then
+					
+					'VBS equivalent of TRY/CATCH
+					On Error Resume Next
+					Err.Clear
+					student.pwdLastSet=0
+					student.setPassword(password)
+					student.setInfo
+					
+					'Check if password is valid, else stop and exit
+					If Err.Number = 0 Then
+						WScript.Echo student.cn & " has now the password " & password
+					Else
+						displayError("Password does not match active Directory requirements" & vbLf & "Aborted!")
+						Exit Sub
+					End If
+					
+				End If
+			Next
+	Else
+		displayError("OU path not valid")
+	End If
+
 End Sub
 
 'Ask index ID in order to reset password based on class
@@ -515,6 +568,7 @@ Sub resetPassword()
 			'Data
 			theClass = indexes.Item("pronote").Item(number)
 			activeDirectoryPath = indexes.Item("activeDirectory").Item(number)
+			studentClass = indexes.Item("pronote").Item(number)
 			
 			'ask confirmation
 			WScript.Echo "Are you sure you want to reset the password of the " & _
@@ -528,7 +582,7 @@ Sub resetPassword()
 				WScript.Echo "Type the password you want to set for the " & theClass & " class"
 				password = WScript.StdIn.ReadLine
 				If password <> "" Then
-					Call resetPasswordIn(activeDirectoryPath, password)
+					Call resetPasswordIn(activeDirectoryPath, password, studentClass)
 				Else
 					displayError("Empty password!")
 				End If
@@ -611,10 +665,10 @@ Function getLogin(firstName, lastName)
 End Function
 
 'Everything in the LDAP except the beginning
-Function getSmallLdapPath(path)
+Function getSmallLdapPath(friendlyPath)
 
 	'The path should be written as something like "Utilisateurs/Eleves/Eleves du CM2
-	OUarray = Split(path,"/")
+	OUarray = Split(friendlyPath,"/")
 	
 	'Get all OU, with the right slash
 	ouPath = ""
@@ -629,9 +683,9 @@ Function getSmallLdapPath(path)
 End Function
 
 'get ldap path based on the path written in the configuration XML file
-Function getLdapPath(path)
+Function getLdapPath(friendlyPath)
 	
-	getLdapPath = "LDAP://" & getSmallLdapPath(path)
+	getLdapPath = "LDAP://" & getSmallLdapPath(friendlyPath)
 
 End Function
 
@@ -830,7 +884,7 @@ End Sub
 Sub writeConfiguration()
 
 	'Ask the user the right configuration
-	WScript.Echo "Name of the index in Pronote : "
+	WScript.Echo "Name of the class in Pronote (column " & excelClassNameCol & ") : "
 	pronote = WScript.StdIn.ReadLine
 	
 	WScript.Echo vbLf & "Corresponding path in Active Directory : "
@@ -858,6 +912,7 @@ Sub writeConfiguration()
 			CreateObject("Microsoft.XMLDOM")
 			
 			xmlDoc.Async = "False"
+			'xmlDoc.indent = True
 			xmlDoc.Load(xmlpath)
 			
 			Set objRoot = xmlDoc.documentElement
@@ -882,7 +937,7 @@ Sub writeConfiguration()
 			objRecord.appendChild objFieldValue
 			  
 			'Save the file
-			xmlDoc.Save xmlpath
+			saveXML(xmlDoc)
 			
 			'Notify user
 			WScript.Echo "Added"
@@ -972,7 +1027,7 @@ Sub createConfigurationFile()
 		  objIntro,xmlDoc.childNodes(0)  
 		
 		'Saving the XML file
-		xmlDoc.Save xmlpath 
+		Call saveXML(xmlDoc)
 		
 		WScript.Echo "Success!"
 	Else
@@ -1125,6 +1180,27 @@ Function getURLLikeString(txt, objReg)
 	txt = Replace(txt,"ï","i")
 	getURLLikeString = objReg.Replace(txt,"")
 End Function
+
+Sub saveXML(xmlDoc)
+		set rdr = CreateObject("MSXML2.SAXXMLReader")
+		set wrt = CreateObject("MSXML2.MXXMLWriter")
+		Set oStream = CreateObject("ADODB.STREAM")
+		oStream.Open
+		oStream.Charset = "ISO-8859-1"
+		 
+		wrt.indent = True
+		wrt.encoding = "ISO-8859-1"
+		wrt.output = oStream
+		Set rdr.contentHandler = wrt
+		Set rdr.errorHandler = wrt
+		rdr.Parse xmlDoc
+		wrt.flush
+		 
+		oStream.SaveToFile xmlpath, 2
+		 
+		Set rdr = Nothing
+		Set wrt = Nothing
+End Sub
 
 
 '-------------------------------------------------------------------------------------------------------------
