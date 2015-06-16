@@ -18,7 +18,6 @@ Set objExcel = CreateObject("Excel.Application")
 xmlpath = fso.BuildPath("C:\Users\vboissiere\Google Drive", "\" & "index.xml")
 excelpath = "C:\Users\vboissiere\Google Drive\pronote script\elevestest.xlsx"
 myLdapPath = "DC=claudel,DC=lan"
-userFriendlyOldDirectory = "Utilisateurs/Anciens/Anciens Eleves"
 
 'Paths in order to create a new student
 profilepath = "\\claudel.lan\partage\profils$\" '(+login added later)
@@ -38,6 +37,11 @@ excelNationalNumber = 7
 'Difference in days between today's date and the date of "date de sortie". Positive integer
 dayDiff = 0
 
+'OLD PATH
+userFriendlyOldDirectory = "Utilisateurs/Anciens/Anciens Eleves"
+Dim oldSubDirectories(1)
+oldSubDirectories(0)= "Annee2013"
+oldSubDirectories(1)= "Annee2014"
 '-------------------------------------------------------------------------------------------------------------
 ' END PARAMETERS
 
@@ -58,7 +62,7 @@ logModeOnly = True
 Do While True
 
 	'Display the menu
-	WScript.Echo vbLf & "1. Sync" & vbLf & "2. Display index" & vbLf & "3. Add index" & vbLf & "4. Remove index" & vbLf & "0. Exit"
+	WScript.Echo vbLf & "1. Sync" & vbLf & "2. Reset Password" & vbLf & "3. Display index" & vbLf & "4. Add index" & vbLf & "5. Remove index" & vbLf & "0. Exit"
 	
 	choice = askInputNumber()
 	
@@ -74,12 +78,14 @@ Do While True
 			Case choice = 1
 				sync()
 			Case choice = 2
+				resetPassword()
+			Case choice = 3
 				'Display table
 				displayConfiguration()
-			Case choice = 3
+			Case choice = 4
 				'Ask user data and add it if valid to the XML configuration file
 				writeConfiguration()
-			Case choice = 4
+			Case choice = 5
 				'Ask user ID of index and remove it from the XML configuration file
 				removeConfiguration()
 			Case Else
@@ -126,6 +132,20 @@ Sub sync()
 	indexes.Item("activeDirectory").Add userFriendlyOldDirectory
 	indexes.Item("uniqueActiveDirectory").Add userFriendlyOldDirectory
 	indexes.Item("pronote").Add ""
+	
+	'Adding all anciens directory old paths if they are valid
+	For Each oldPath In oldSubDirectories
+		thisPath = userFriendlyOldDirectory & "/" & oldPath
+		
+		Set checkOU = getActiveOUDirectory(thisPath)
+		If Not checkOU Is Nothing And thisPath <> userFriendlyOldDirectory Then
+			indexes.Item("activeDirectory").Add thisPath
+			indexes.Item("uniqueActiveDirectory").Add thisPath
+			indexes.Item("pronote").Add ""
+		Else 
+			WScript.Echo "WARNING : the old path " & thisPath & " is not valid or already exists"
+		End If
+	Next
 	
 	
 	WScript.Echo "Indexing Active Directory...."
@@ -193,6 +213,99 @@ Sub sync()
 	objConnection.Close
 	
 	objExcel.Quit
+	
+End Sub
+
+'Search student. Can be used many times
+Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, studentDate, currentLine, activeDirectoryGUID)
+
+	Set uniqueActiveDirectory = indexes.Item("uniqueActiveDirectory")
+
+	'Search students in the given configuration indexes (AD paths)
+	For i = 0 To uniqueActiveDirectory.Count - 1 Step 1
+		
+		'Query for the search
+		objCommand.CommandText = _
+		    "<" & getLdapPath(uniqueActiveDirectory.Item(i)) & _
+		     ">;(&(objectCategory=person)(objectClass=user)(displayName=" & studentName & "*));cn;subtree"
+		  
+		Set objRecordSet = objCommand.Execute
+		 
+		numberOfMatch = objRecordset.RecordCount
+		
+		'if one student found, stop search and execute subRoutine
+		If numberOfMatch = 1 Then
+		
+			studentCN = objRecordSet.Fields("cn").Value
+			
+			rawPath = "LDAP://CN=" & studentCN & "," & getSmallLdapPath(uniqueActiveDirectory.Item(i))
+			
+    		Set student = getActiveOUDDirectoryFromRaw(rawPath, rawPath)
+    		
+    		If Not student Is Nothing Then
+    			'Remove from index
+    			activeDirectoryGUID.remove(student.ADspath)
+		    	Call studentExists(studentCurrentClass, studentName, indexes, i, studentDate <> "" And DateDiff("d",Now, studentDate) < dayDiff, student, currentLine)
+		    	'WScript.Echo student.Cn
+		    End If
+		    
+		    objRecordSet.Close
+		    Exit Sub
+		Else If numberOfMatch > 1 Then
+			textLogWarning = textLogWarning & vbLf &  "WARNING : More than one match for " & studentName & " (User ignored)"
+			Exit Sub
+			End If
+		End If
+	Next
+
+	'No student found, create student
+	Call createStudent(currentLine, indexes,studentCurrentClass)
+	objRecordSet.Close
+End Sub
+
+'Trigger actions based on the Excel data and the position of the student and its category (active vs old)
+Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, student, currentLine)
+
+	'WScript.Echo "Student Exist... (actions simulated)"
+	
+	posShouldBeIn = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
+	
+	'Check if found in old or active. Last is the old directory
+	If posFound >= indexes.Item("uniqueActiveDirectory").Count - UBound(oldSubDirectories) - 2 Then
+		
+		'Move student if should be in active path and is in old path
+		If Not IsOld Then
+			Call updateStudent(student, currentLine, indexes, studentCurrentClass)
+			Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn))
+			Exit Sub
+		End If
+		
+		Call updateStudent(student, currentLine, indexes, studentCurrentClass)
+		
+	Else
+		'Active path
+		
+		If IsOld Then
+			Call updateStudent(student, currentLine, indexes, studentCurrentClass)
+			Call moveStudent(student, indexes.Item("uniqueActiveDirectory").Item(indexes.Item("uniqueActiveDirectory").Count - 1))
+			Exit Sub
+		Else
+			'Good category
+			
+			pronoteADIndex = indexes.Item("uniqueActiveDirectory").Item(posFound)
+		
+			'Wrong section
+			If indexes.Item("activeDirectory").Item(posShouldBeIn) <> pronoteAdIndex Then
+				Call updateStudent(student, currentLine, indexes, studentCurrentClass)
+				Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn))
+				Exit Sub
+			End If
+		End If
+		
+		Call updateStudent(student, currentLine, indexes, studentCurrentClass)
+		
+	End If
+
 	
 End Sub
 
@@ -278,52 +391,6 @@ Sub moveStudent(student, friendlyPath)
 	    End If
 		
 	End If
-	
-End Sub
-
-'Trigger actions based on the Excel data and the position of the student and its category (active vs old)
-Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, student, currentLine)
-
-	'WScript.Echo "Student Exist... (actions simulated)"
-	
-	posShouldBeIn = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
-	
-	'Check if found in old or active. Last is the old directory
-	If posFound = indexes.Item("uniqueActiveDirectory").Count - 1 Then
-		
-		'Move student if should be in active path and is in old path
-		If Not IsOld Then
-			Call updateStudent(student, currentLine, indexes, studentCurrentClass)
-			Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn))
-			Exit Sub
-		End If
-		
-		Call updateStudent(student, currentLine, indexes, studentCurrentClass)
-		
-	Else
-		'Active path
-		
-		If IsOld Then
-			Call updateStudent(student, currentLine, indexes, studentCurrentClass)
-			Call moveStudent(student, indexes.Item("uniqueActiveDirectory").Item(indexes.Item("uniqueActiveDirectory").Count - 1))
-			Exit Sub
-		Else
-			'Good category
-			
-			pronoteADIndex = indexes.Item("uniqueActiveDirectory").Item(posFound)
-		
-			'Wrong section
-			If indexes.Item("activeDirectory").Item(posShouldBeIn) <> pronoteAdIndex Then
-				Call updateStudent(student, currentLine, indexes, studentCurrentClass)
-				Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn))
-				Exit Sub
-			End If
-		End If
-		
-		Call updateStudent(student, currentLine, indexes, studentCurrentClass)
-		
-	End If
-
 	
 End Sub
 
@@ -428,51 +495,53 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 	
 End Sub
 
-'Search student. Can be used many times
-Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, studentDate, currentLine, activeDirectoryGUID)
+Sub resetPasswordIn(activeDirectoryPath, password)
 
-	Set uniqueActiveDirectory = indexes.Item("uniqueActiveDirectory")
+	WScript.Echo "Simulation for password : " & password
+End Sub
 
-	'Search students in the given configuration indexes (AD paths)
-	For i = 0 To uniqueActiveDirectory.Count - 1 Step 1
+'Ask index ID in order to reset password based on class
+Sub resetPassword()
+	WScript.Echo "ID de la classe pour modifier le mot de passe : "
+	
+	number = askInputNumber()
+	
+	If number <> -1 And number > 0 Then
+		Set indexes = getXMLIndexes()
+		If number <= indexes.Item("pronote").Count Then
 		
-		'Query for the search
-		objCommand.CommandText = _
-		    "<" & getLdapPath(uniqueActiveDirectory.Item(i)) & _
-		     ">;(&(objectCategory=person)(objectClass=user)(displayName=" & studentName & "*));cn;subtree"
-		  
-		Set objRecordSet = objCommand.Execute
-		 
-		numberOfMatch = objRecordset.RecordCount
+			number = number -1 'Modify for the index
 		
-		'if one student found, stop search and execute subRoutine
-		If numberOfMatch = 1 Then
-		
-			studentCN = objRecordSet.Fields("cn").Value
+			'Data
+			theClass = indexes.Item("pronote").Item(number)
+			activeDirectoryPath = indexes.Item("activeDirectory").Item(number)
 			
-			rawPath = "LDAP://CN=" & studentCN & "," & getSmallLdapPath(uniqueActiveDirectory.Item(i))
+			'ask confirmation
+			WScript.Echo "Are you sure you want to reset the password of the " & _
+					theClass & " class corresponding to the path " & _
+					activeDirectoryPath & " in Active Directory ? (y/n)"
+					
+			confirmation = askConfirmation()
 			
-    		Set student = getActiveOUDDirectoryFromRaw(rawPath, rawPath)
-    		
-    		If Not student Is Nothing Then
-    			'Remove from index
-    			activeDirectoryGUID.remove(student.ADspath)
-		    	Call studentExists(studentCurrentClass, studentName, indexes, i, studentDate <> "" And DateDiff("d",Now, studentDate) < dayDiff, student, currentLine)
-		    	'WScript.Echo student.Cn
-		    End If
-		    
-		    objRecordSet.Close
-		    Exit Sub
-		Else If numberOfMatch > 1 Then
-			textLogWarning = textLogWarning & vbLf &  "WARNING : More than one match for " & studentName & " (User ignored)"
-			Exit Sub
+			'ask for password and trigger subMenu to reset password
+			If confirmation Then
+				WScript.Echo "Type the password you want to set for the " & theClass & " class"
+				password = WScript.StdIn.ReadLine
+				If password <> "" Then
+					Call resetPasswordIn(activeDirectoryPath, password)
+				Else
+					displayError("Empty password!")
+				End If
+			Else
+				WScript.Echo "Aborted!"
 			End If
+		Else
+			displayError("The index does not exists")
 		End If
-	Next
+	Else
+		displayError("This is not a number or the ID cannot be 0 (start at 1)")
+	End if
 
-	'No student found, create student
-	Call createStudent(currentLine, indexes,studentCurrentClass)
-	objRecordSet.Close
 End Sub
 
 
