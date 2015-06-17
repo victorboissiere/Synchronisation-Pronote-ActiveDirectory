@@ -15,8 +15,8 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set objExcel = CreateObject("Excel.Application")
 
-xmlpath = fso.BuildPath("C:\users\vboissiere\Google Drive\bin\", "index.xml")
-excelpath = "C:\users\vboissiere\Google Drive\pronote script\elevesdetest2.xlsx"
+xmlpath = fso.BuildPath("C:\users\vboissiere\Google Drive\", "index.xml")
+excelpath = "C:\users\vboissiere\Google Drive\pronote script\eleve juin 2015.xlsx"
 myLdapPath = "DC=claudel,DC=lan"
 
 'Paths in order to create a new student
@@ -342,6 +342,11 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 	email = objExcel.Cells(currentLine,excelEmailCol).Text
 	nationalNumber = objExcel.Cells(currentLine,excelNationalNumber).Text
 	
+	If InStr(email, "claudel.org") = 0 Then
+		textLogWarning = textLogWarning & vbLf &  "WARNING : " & firstName & " " & lastName & _
+				" has the email " & email & " which is not claudel.org"
+	End If
+	
 	'Get the right activeDirectory position in index
 	activeDirectoryPos = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
 	
@@ -362,7 +367,9 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 			objUser.firstName = firstName
 			objUser.lastName = lastName
 			objUser.cn = firstName & " " & lastName
-			objUser.mail = email
+			If InStr(email, "claudel.org") <> 0 Then
+				objUser.mail = email				
+			End If
 			objUser.description = className
 			objUser.displayName = firstName & " " & lastName & " " & className
 			objUser.userPrincipalName = login
@@ -502,10 +509,11 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 		nbModif = nbModif + 1
 	End If
 	
-	'If email not set in pronote, display only a warning
+	
+
 	If email = "#N/A" Then
 		textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has no email set on Pronote, active directory email untouched"		
-	Else If email <> student.EmailAddress Then
+	Else If email <> student.mail Then
 		If InStr(email, "claudel.org") <> 0 Then
 			column.Item(3) = email
 			nbModif = nbModif + 1
@@ -514,6 +522,7 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 		End If
 		End If
 	End If
+
 	
 	'If nationalNumber <> student.physicalDeliveryOfficeName Then
 	'	textLog = textLog & " current National Number: " & nationalNumber
@@ -637,7 +646,7 @@ Sub resetPassword()
 				WScript.Echo "Type the password you want to set for the " & theClass & " class"
 				password = WScript.StdIn.ReadLine
 				If password <> "" Then
-					WScript.Echo "Do you want to ask the class " & theClass & " to change the default password when they log in ? (y/n)"
+					WScript.Echo vbLf & "Do you want to ask the class " & theClass & " to change the default password when they log in ? (y/n)"
 					Call resetPasswordIn(activeDirectoryPath, password, studentClass, askConfirmation())
 				Else
 					displayError("Empty password!")
