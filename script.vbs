@@ -15,8 +15,8 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set objExcel = CreateObject("Excel.Application")
 
-xmlpath = fso.BuildPath("C:\Users\adminvictor\Google Drive", "\" & "index.xml")
-excelpath = "C:\Users\adminvictor\Google Drive\pronote script\elevesdetest2.xlsx"
+xmlpath = fso.BuildPath("C:\users\vboissiere\Google Drive\bin\", "index.xml")
+excelpath = "C:\users\vboissiere\Google Drive\pronote script\elevesdetest2.xlsx"
 myLdapPath = "DC=claudel,DC=lan"
 
 'Paths in order to create a new student
@@ -42,9 +42,10 @@ defaultPassword = "Passw0rd"
 
 'OLD PATH
 userFriendlyOldDirectory = "Utilisateurs/Anciens/Anciens Eleves"
-Dim oldSubDirectories(1)
+Dim oldSubDirectories(2)
 oldSubDirectories(0)= "Annee2013"
 oldSubDirectories(1)= "Annee2014"
+oldSubDirectories(2)= "Annee2015"
 '-------------------------------------------------------------------------------------------------------------
 ' END PARAMETERS
 
@@ -54,11 +55,15 @@ oldSubDirectories(1)= "Annee2014"
 
 WScript.Echo "SYNCING PROGRAM FOR PRONOTE -- Choose options"
 
-'Needed global var
+'LOGS
+
+'Variables for the tables
+Set textLogMoved = CreateObject("System.Collections.ArrayList") 
+Set textLogUpdated = CreateObject("System.Collections.ArrayList")
+Set textLogCreated = CreateObject("System.Collections.ArrayList")
+
+'OTHERS
 textLogWarning = ""
-textLogCreated = ""
-textLogUpdated = ""
-textLogMoved = ""
 textLogError = ""
 logModeOnly = True
 
@@ -114,10 +119,9 @@ Sub sync()
 
 	'Reset logs
 	textLogWarning = ""
-	textLogCreated = ""
-	textLogUpdated = ""
-	textLogMoved = ""
 	textLogError = ""
+	
+	Call generateHeaders()
 	
 	WScript.Echo "Do you want to run the script in production mode ? (y/n)"
 	
@@ -166,22 +170,23 @@ Sub sync()
 	WScript.Echo "Updating students..."
 	
 	'Foreach students in excel
-	Do Until objExcel.Cells(currentLine, excelClassNameCol).Value = ""
+	Do Until objExcel.Cells(currentLine, excelFirstNameCol).Value = ""
 	
 		'Get the student class in Excel
 		studentCurrentClass = objExcel.Cells(currentLine,excelClassNameCol)
 		studentDate = objExcel.Cells(currentLine,excelDateCol)
 		
-		'If the class exists in the xml configuration file, then search student
-		If indexes.Item("pronote").Contains(studentCurrentClass) Then
+		'If the class exists in the xml configuration file or is empty, then search student
+		If indexes.Item("pronote").Contains(studentCurrentClass) Or studentCurrentClass = "" Then
+		
 			
 			firstName = objExcel.Cells(currentLine,excelFirstNameCol)
 			lastName = objExcel.Cells(currentLine,excelLastNameCol)
 			
 			'search student based on name
 			Call searchStudent(objCommand, firstName & " " & lastName, indexes, studentCurrentClass, studentDate, currentLine, activeDirectoryGUID)
-		End If
 		
+		End If
 		currentLine = currentLine + 1
 	Loop
 	
@@ -192,14 +197,15 @@ Sub sync()
 		WScript.Echo "------------------------------------------------" & vbLf
 	End If
 	
-	WScript.Echo vbLf & "STUDENTS UPDATED : "
-	WScript.Echo textLogUpdated
+	WScript.Echo vbLf & "STUDENTS UPDATED : " & vbLf
+	Call displayTable(textLogUpdated)
 	
-	WScript.Echo vbLf & "STUDENTS MOVED : "
-	WScript.Echo textLogMoved
+	WScript.Echo vbLf & "STUDENTS MOVED : " & vbLf
+	'Add headers for the table
+	Call displayTable(textLogMoved)
 	
-	WScript.Echo vbLf & "STUDENTS CREATED : "
-	WScript.Echo textLogCreated
+	WScript.Echo vbLf & "STUDENTS CREATED : " & vbLf
+	Call displayTable(textLogCreated)
 	
 	WScript.Echo vbLf & "LIST OF WARNINGS : "
 	WScript.Echo textLogWarning
@@ -211,10 +217,9 @@ Sub sync()
 	
 	'All students that match the class but that are not in ProNote
 	For Each cn In activeDirectoryGUID
-		Set s = getActiveOUDDirectoryFromRaw(cn, cn)
-		If Not s Is Nothing Then
-			WScript.Echo s.cn & " Classe : " & s.description 
-		End If
+		begin = InStr(cn, "=") + 1
+		last = InStr(cn, ",")
+		WScript.Echo Mid(cn, begin, last-begin)
 	Next
 	
 	'Close connection to AD
@@ -252,7 +257,7 @@ Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, student
     		
     		If Not student Is Nothing Then
     			'Remove from index
-    			activeDirectoryGUID.remove(student.ADspath)
+    			activeDirectoryGUID.remove(LCase(student.ADspath))
 		    	Call studentExists(studentCurrentClass, studentName, indexes, i, studentDate <> "" And DateDiff("d",Now, studentDate) < dayDiff, student, currentLine)
 		    	'WScript.Echo student.Cn
 		    End If
@@ -266,20 +271,31 @@ Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, student
 		End If
 	Next
 
-	'No student found, create student
-	Call createStudent(currentLine, indexes,studentCurrentClass)
+	'No student found, create student only if class is not empty
+	If studentCurrentClass <> "" Then
+		Call createStudent(currentLine, indexes,studentCurrentClass)
+	End If
 	objRecordSet.Close
 End Sub
 
 'Trigger actions based on the Excel data and the position of the student and its category (active vs old)
 Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, student, currentLine)
 
-	'WScript.Echo "Student Exist... (actions simulated)"
-	
+	'Student exist but class is null, move it the old path
+	If studentCurrentClass = "" Then
+		'move only if not already found in old path
+		If posFound < indexes.Item("uniqueActiveDirectory").Count - UBound(oldSubDirectories) - 2 Then
+			Call moveStudent(student, indexes.Item("uniqueActiveDirectory").Item(indexes.Item("uniqueActiveDirectory").Count - 1))
+		End If
+		Exit Sub
+	End If
+		
+		
 	posShouldBeIn = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
 	
 	'Check if found in old or active. Last is the old directory
 	If posFound >= indexes.Item("uniqueActiveDirectory").Count - UBound(oldSubDirectories) - 2 Then
+	
 		
 		'Move student if should be in active path and is in old path
 		If Not IsOld Then
@@ -388,8 +404,12 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 		End If
 		
 	End If
-
-	textLogCreated = textLogCreated & vbLf & firstName & " " & lastName & " in " & friendlyPath & ". Login : " & login
+	
+	Set column = CreateObject("System.Collections.ArrayList") 
+	column.Add firstName & " " & lastName
+	column.Add friendlyPath
+	column.Add login
+	textLogCreated.Add column
 	
 End Sub
 
@@ -401,8 +421,12 @@ Sub moveStudent(student, friendlyPath)
 	If Not ou Is Nothing Then
 	
 		'log
-		textLogMoved = textLogMoved & vbLf & student.Firstname & " " & student.lastName & " moved to " & friendlyPath
+		Set movedTo = CreateObject("System.Collections.ArrayList")
+		movedTo.Add student.Firstname & " " & student.lastName
+		movedTo.Add getFriendlyPathFromOU(student.ADsPath)
+		movedTo.Add friendlyPath
 		
+		textLogMoved.Add movedTo
 		
 		'Move student
 		If Not logModeOnly Then
@@ -426,6 +450,16 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 	pos = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
 	shouldBeInGroupPath = LCase(getGroupPath(indexes.Item("group").Item(pos)))
 	
+	Set column = CreateObject("System.Collections.ArrayList") 
+	column.Add ""'0 student
+	column.Add ""'1 firstName
+	column.Add ""'2 lastName
+	column.Add ""'3 email
+	column.Add ""'4 class
+	column.Add ""'5 group
+	
+	nbModif = 0
+	
 	
 	'foreach group. If equal than 1, compare, if 0 or more than 1, warning
 	Set group = student.Groups
@@ -444,7 +478,8 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 	textLog = ""
 	
 	If nbGroup <= 1 And StrComp(shouldBeInGroupPath, lastGroupPath, 1) <> 0 Then
-		textLog = textLog & " Group: " & shouldBeInGroupPath
+		column.Item(5) = shouldBeInGroupPath
+		nbModif = nbModif + 1
 	Else If nbGroup > 1 Then
 				textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
 		End If
@@ -453,22 +488,30 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 	
 	
 	If firstName <> student.FirstName Then
-		textLog = textLog & " firstName: " & firstName
+		column.Item(1) = firstName
+		nbModif = nbModif + 1
 	End If
 	
 	If lastName <> student.LastName Then
-		textLog = textLog & " lastName: " & lastName
+		column.Item(2) = lastName
+		nbModif = nbModif + 1
 	End If
 	
 	If className <> student.Description Then
-		textLog = textLog & " ClassName: " & className
+		column.Item(4) = className
+		nbModif = nbModif + 1
 	End If
 	
 	'If email not set in pronote, display only a warning
-	If email = "#N/A"  Then
-		textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has no email set on Pronote, active directory email untouched"
+	If email = "#N/A" Then
+		textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has no email set on Pronote, active directory email untouched"		
 	Else If email <> student.EmailAddress Then
-		textLog = textLog & " email: " & email
+		If InStr(email, "claudel.org") <> 0 Then
+			column.Item(3) = email
+			nbModif = nbModif + 1
+		Else
+			textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has the email " & email & " which is not claudel.org"		
+		End If
 		End If
 	End If
 	
@@ -484,7 +527,7 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 		student.physicalDeliveryOfficeName = nationalNumber
 		
 		'No warning on the email
-		If email <> "#N/A" Then
+		If email <> "#N/A" And InStr(email, "claudel.org") <> 0 Then
 			student.mail = email
 		End If
 		
@@ -509,8 +552,9 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 		student.setInfo
 	End If
 	
-	If textLog <> "" Then
-		textLogUpdated = textLogUpdated & vbLf & student.cn & ". " & textLog
+	If nbModif > 0 Then
+		column.Item(0) = student.firstName & " " & student.lastName
+		textLogUpdated.Add column
 	End If
 	
 End Sub
@@ -533,6 +577,7 @@ Sub resetPasswordIn(activeDirectoryPath, password, studentClass)
 					'VBS equivalent of TRY/CATCH
 					On Error Resume Next
 					Err.Clear
+					' ligne suivante a commenter pour ne pas demander que le password soit change a la premiere connection
 					student.pwdLastSet=0
 					student.setPassword(password)
 					student.setInfo
@@ -765,7 +810,7 @@ Function getActiveDirectoryGUID(paths, indexes)
 	Set activeDirectoryGUID = CreateObject("System.Collections.ArrayList")
 	
 	'Foreach all AD paths in the XML configuration file
-	For i = 0 To paths.Count - 1 Step 1
+	For i = 0 To paths.Count - 2 - UBound(oldSubDirectories) Step 1
 		
 		'Get OU
 		Set OUs = getActiveOUDirectory(paths.Item(i))
@@ -775,7 +820,7 @@ Function getActiveDirectoryGUID(paths, indexes)
 		If Not OUs Is Nothing Then
 			For Each user in OUs
 				If indexes.Item("pronote").IndexOf(user.Description, 0) <> -1 Then
-    				activeDirectoryGUID.Add user.ADsPath
+    				activeDirectoryGUID.Add LCase(user.ADsPath)
     			End If
 			Next
 		Else
@@ -803,22 +848,6 @@ Sub displayConfiguration()
 	'Load XML
 	Set xmlDoc = loadXML()
 	
-	'Create lists to display in the table
-	Set pronote = CreateObject("System.Collections.ArrayList")
-	Set activeDirectory = CreateObject("System.Collections.ArrayList")
-	Set group = CreateObject("System.Collections.ArrayList")
-	
-	'Adding MENU ITEM
-	pronote.Add "Pronote index"
-	activeDirectory.Add "Active directory path"
-	group.Add "Group"
-	
-	'Variables to render the correct lenght for the table
-	Dim maxPronoteLenght
-	maxPronoteLenght = Len(pronote.item(0))
-	maxActiveDirectoryLength = Len(activeDirectory.item(0))
-	maxGroupLength = Len(group.item(0))
-	
 	'Get nodes
 	Set nodes = xmlDoc.documentElement.SelectNodes("//Index")
 	
@@ -828,54 +857,28 @@ Sub displayConfiguration()
 		Exit Sub
 	End If
 	
+	'Create first row
+	Set rows = CreateObject("System.Collections.ArrayList")
+	Set headers = CreateObject("System.Collections.ArrayList")
+	headers.Add "Class"
+	headers.Add "Active Directory Path"
+	headers.Add "Active Directory Group Path"
+	rows.Add headers
+	
 	'Foreach XML file
 	For Each Index In nodes
 	
+		Set column = CreateObject("System.Collections.ArrayList")
+	
 		'Get tag name in the XML
-		p = Index.getElementsByTagName("Pronote")(0).text
-		a = Index.getElementsByTagName("ActiveDirectory")(0).text
-		g = Index.getElementsByTagName("Group")(0).text
+		column.Add Index.getElementsByTagName("Pronote")(0).text
+		column.Add Index.getElementsByTagName("ActiveDirectory")(0).text
+		column.Add Index.getElementsByTagName("Group")(0).text
 		
-		'Display spacing for the table
-		maxPronoteLength = max(maxPronoteLenght, Len(p))
-		maxActiveDirectoryLength = max(maxActiveDirectoryLength ,Len(a))
-		maxGroupLength = max(maxGroupLength ,Len(g))
-		
-		'Add elements to the corresponding list
-		pronote.Add p
-		activeDirectory.Add a
-		group.Add g
+		rows.Add column
 	Next
 	
-	'Generate top and bottom border
-	bottomAndTopBorder = " " & generateTextBorder(maxPronoteLength + maxActiveDirectoryLength + maxGroupLength + 13)
-	
-	'Top Border
-	WScript.Echo bottomAndTopBorder
-	
-	For i = 0 To pronote.Count - 1 Step 1
-	
-		If i = 0 Then 
-			id = "id"
-		Else
-			id = CStr(i)
-		End If
-		
-		'handle spacing
-		spaceCol1 = getTableSpace(id, max(pronote.Count / 10 + 2, Len(id)))
-		spaceCol2 = getTableSpace(pronote.Item(i), maxPronoteLength)
-		spaceCol3 = getTableSpace(activeDirectory.Item(i), maxActiveDirectoryLength)
-		spaceCol4 = getTableSpace(group.Item(i), maxGroupLength)
-		
-	
-		WScript.Echo "| " & id & spaceCol1 & " | " & pronote.Item(i) & spaceCol2 & " | " & activeDirectory.Item(i) & spaceCol3 & " | " & group.Item(i) & spaceCol4 & " |"
-		
-		If i = 0 Then WScript.Echo bottomAndTopBorder End If
-		
-	Next
-	
-	'Bottom Border
-	WScript.Echo bottomAndTopBorder
+	displayTable(rows)
 
 	
 End Sub
@@ -1063,11 +1066,11 @@ Function getXMLIndexes()
 	'Foreach XML file
 	For Each Index In xmlDoc.documentElement.SelectNodes("//Index")
 	
-		a = Index.getElementsByTagName("ActiveDirectory")(0).text
+		a = LCase(Index.getElementsByTagName("ActiveDirectory")(0).text)
 		'Add to the list the AD index
 		activeDirectory.Add a
 		pronote.Add Index.getElementsByTagName("Pronote")(0).text
-		group.Add Index.getElementsByTagName("Group")(0).text
+		group.Add LCase(Index.getElementsByTagName("Group")(0).text)
 		
 		If Not uniqueActiveDirectory.Contains(a) Then
 			uniqueActiveDirectory.Add a
@@ -1200,6 +1203,107 @@ Sub saveXML(xmlDoc)
 		 
 		Set rdr = Nothing
 		Set wrt = Nothing
+End Sub
+
+'From a raw path get a friednly path
+Function getFriendlyPathFromOU(rawPath)
+	parts = Split(rawPath, ",")
+
+	friendlyPath = ""
+	
+	For Each p In parts 
+	
+		'Detect both uppercase and lowercase
+		posUP = InStr(p, "OU=")
+		posLO = InStr(p, "ou=")
+		
+		If posUP <> 0 Then
+			friendlyPath =  Mid(p, posUP+3, Len(p)) & "/" & friendlyPath
+		Else If posLO <> 0 Then
+			friendlyPath = Mid(p, posLO+3, Len(p)) & "/" & friendlyPath
+			End If
+		End If
+	Next
+	
+	'In case of wrong path, avoid program to crash
+	If Len(friendlyPath) > 2 Then
+		getFriendlyPathFromOU =  Mid(friendlyPath, 1, Len(friendlyPath)-1) 'Remove last "/"
+	Else
+		getFriendlyPathFromOU = ""
+	End If
+End Function
+
+'Display table based on an array list of array list
+Sub displayTable(rows)
+
+	If rows.Count <= 1 Then
+		Exit Sub
+	End If
+
+	'Compute length to know max length of every columns
+	Set maxLength = CreateObject("System.Collections.ArrayList")
+	
+	'Init arrayList. Suppose that every lines have the same length
+	For i = 0 To rows.Item(0).Count - 1 Step 1
+		maxLength.Add 0 
+	Next
+	
+	Dim pos
+	For Each column In rows
+		For i = 0 To column.Count - 1 Step 1
+			maxLength.Item(i) = max(maxLength.Item(i), Len(column.Item(i)))
+		Next
+	Next
+	
+	'Get table border
+	size = 0 
+	For Each m In maxLength
+		size = size + m
+	Next
+	border = generateTextBorder(size + 5 * rows.Item(0).Count)
+
+	WScript.Echo border
+	Dim display
+	For Each column In rows
+		display = "| "
+		For i = 0 To column.Count - 1 Step 1
+			display = display & column.Item(i) & getTableSpace(column.Item(i), maxLength.Item(i) + 2) & " | "
+		Next
+		WScript.Echo display
+		WScript.Echo border
+	Next
+
+End Sub
+
+'Clear arrayList and init header
+Sub generateHeaders()
+
+	textLogMoved.clear
+	're add headers
+	Set textLogMovedHeaders = CreateObject("System.Collections.ArrayList") 
+	textLogMovedHeaders.Add "Student"
+	textLogMovedHeaders.Add "From"
+	textLogMovedHeaders.Add "To"
+	textLogMoved.Add textLogMovedHeaders
+	
+	textLogCreated.clear
+	're add headers
+	Set textLogCreatedHeaders = CreateObject("System.Collections.ArrayList") 
+	textLogCreatedHeaders.Add "Student"
+	textLogCreatedHeaders.Add "Path"
+	textLogCreatedHeaders.Add "Login"
+	textLogCreated.Add textLogCreatedHeaders
+	
+	textLogUpdated.clear
+	're add headers
+	Set textLogUpdatedHeaders = CreateObject("System.Collections.ArrayList") 
+	textLogUpdatedHeaders.Add "Student"
+	textLogUpdatedHeaders.Add "FirstName"
+	textLogUpdatedHeaders.Add "LastName"
+	textLogUpdatedHeaders.Add "Email"
+	textLogUpdatedHeaders.Add "Class"
+	textLogUpdatedHeaders.Add "Group"
+	textLogUpdated.Add textLogUpdatedHeaders
 End Sub
 
 
