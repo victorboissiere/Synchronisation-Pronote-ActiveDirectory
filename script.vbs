@@ -41,6 +41,7 @@ dayDiff = 0
 defaultPassword = "Passw0rd"
 
 'OLD PATH
+oldGroupPath = "Utilisateurs/Anciens/Groupe des anciens Eleves"
 userFriendlyOldDirectory = "Utilisateurs/Anciens/Anciens Eleves"
 Dim oldSubDirectories(2)
 oldSubDirectories(0)= "Annee2013"
@@ -285,6 +286,42 @@ Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, st
 	If studentCurrentClass = "" Then
 		'move only if not already found in old path
 		If posFound < indexes.Item("uniqueActiveDirectory").Count - UBound(oldSubDirectories) - 2 Then
+			
+			'TODO : CHECK IF IT IS WORKING FOR THURSDAY
+			Set group = student.Groups
+			Dim lastGroup
+			nbGroupPath = 0
+			
+			For Each g In group
+				Set lastGroup = g
+				nbGroup = nbGroup + 1
+			Next
+			
+			If nbGroup <= 1 Then
+				lastGroupPath = LCase(lastGroup.ADsPath)
+			End If
+			
+			If nbGroup <= 1 Then
+			
+				groupPath = getGroupPath(oldGroupPath)
+
+				Set objGroup = getActiveOUDDirectoryFromRaw(groupPath, groupPath)
+				
+				If Not objGroup Is Nothing And Not logModeOnly Then
+				
+					'delete old Group if exists
+					If nbGroup = 1 Then
+	        			lastGroup.remove(student.ADsPath)
+	        		End If
+	        	
+					objGroup.add(student.ADsPath)
+				End If
+			Else If nbGroup > 1 Then
+				textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
+				End If
+			End If
+			
+			
 			Call moveStudent(student, indexes.Item("uniqueActiveDirectory").Item(indexes.Item("uniqueActiveDirectory").Count - 1))
 		End If
 		Exit Sub
@@ -488,7 +525,7 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 		column.Item(5) = shouldBeInGroupPath
 		nbModif = nbModif + 1
 	Else If nbGroup > 1 Then
-				textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
+			textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
 		End If
 	End If
 	
