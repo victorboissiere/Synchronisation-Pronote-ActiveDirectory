@@ -559,8 +559,17 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 	
 End Sub
 
+
+'-------------------------------------------------------------------------------------------------------------
+' END SYNCING FUNCTIONS
+
+
+' RESET PASSWORD FUNCTIONS
+'-------------------------------------------------------------------------------------------------------------
+
+
 'Reset password in an active Directory Path for student of the rightClass
-Sub resetPasswordIn(activeDirectoryPath, password, studentClass)
+Sub resetPasswordIn(activeDirectoryPath, password, studentClass, askReset)
 
 	WScript.Echo vbLf & vbLf & "The student of the class " & studentClass & " will be asked to change their passwords"
 
@@ -577,8 +586,9 @@ Sub resetPasswordIn(activeDirectoryPath, password, studentClass)
 					'VBS equivalent of TRY/CATCH
 					On Error Resume Next
 					Err.Clear
-					' ligne suivante a commenter pour ne pas demander que le password soit change a la premiere connection
-					student.pwdLastSet=0
+					If askReset Then
+						student.pwdLastSet=0
+					End If
 					student.setPassword(password)
 					student.setInfo
 					
@@ -627,7 +637,8 @@ Sub resetPassword()
 				WScript.Echo "Type the password you want to set for the " & theClass & " class"
 				password = WScript.StdIn.ReadLine
 				If password <> "" Then
-					Call resetPasswordIn(activeDirectoryPath, password, studentClass)
+					WScript.Echo "Do you want to ask the class " & theClass & " to change the default password when they log in ? (y/n)"
+					Call resetPasswordIn(activeDirectoryPath, password, studentClass, askConfirmation())
 				Else
 					displayError("Empty password!")
 				End If
@@ -643,11 +654,8 @@ Sub resetPassword()
 
 End Sub
 
-
 '-------------------------------------------------------------------------------------------------------------
-' END SYNCING FUNCTIONS
-
-
+' END RESET PASSWORD FUNCTIONS
 
 
 ' ACTIVE DIRECTORY FUNCTIONS
