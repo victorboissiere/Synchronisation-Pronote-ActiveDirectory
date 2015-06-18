@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration>
+   <Index>
+      <Pronote>CE2B</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du Primaire</ActiveDirectory>
+      <Group>utilisateurs/eleves/Eleves du Primaire/Groupes des Eleves du Primaire/PgrCE2B</Group>
+   </Index>
+   <Index>
+      <Pronote>CE2R</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du Primaire</ActiveDirectory>
+      <Group>utilisateurs/eleves/Eleves du Primaire/Groupes des Eleves du Primaire/PgrCE2R</Group>
+   </Index>
+   <Index>
+      <Pronote>CE2V</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du Primaire</ActiveDirectory>
+      <Group>utilisateurs/eleves/Eleves du Primaire/Groupes des Eleves du Primaire/PgrCE2V</Group>
+   </Index>
+   <Index>
+      <Pronote>CM1B</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du Primaire</ActiveDirectory>
+      <Group>utilisateurs/eleves/Eleves du Primaire/Groupes des Eleves du Primaire/PgrCM1B</Group>
+   </Index>
+   <Index>
+      <Pronote>CM1R</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du Primaire</ActiveDirectory>
+      <Group>utilisateurs/eleves/Eleves du Primaire/Groupes des Eleves du Primaire/PgrCM1R</Group>
+   </Index>
+   <Index>
+      <Pronote>CM1V</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du Primaire</ActiveDirectory>
+      <Group>utilisateurs/eleves/Eleves du Primaire/Groupes des Eleves du Primaire/PgrCM1V</Group>
+   </Index>
+   <Index>
+      <Pronote>CM2B</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du CM2</ActiveDirectory>
+      <Group>utilisateurs/eleves/Eleves du CM2/Groupes des Eleves du CM2/PgrCM2B</Group>
+   </Index>
+   <Index>
+      <Pronote>CM2R</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du CM2</ActiveDirectory>
+      <Group>utilisateurs/eleves/Eleves du CM2/Groupes des Eleves du CM2/PgrCM2R</Group>
+   </Index>
+   <Index>
+      <Pronote>CM2V</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du CM2</ActiveDirectory>
+      <Group>utilisateurs/eleves/Eleves du CM2/Groupes des Eleves du CM2/PgrCM2V</Group>
+   </Index>
+   <Index>
+      <Pronote>6B</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/groupes des eleves du college/sgr6B</Group>
+   </Index>
+   <Index>
+      <Pronote>6R</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/Groupes des eleves du College/sgr6R</Group>
+   </Index>
+   <Index>
+      <Pronote>6V</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/Groupes des eleves du College/sgr6V</Group>
+   </Index>
+   <Index>
+      <Pronote>TL</Pronote>
+      <ActiveDirectory>Utilisateurs/eleves/eleves du lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgrTL</Group>
+   </Index>
+   <Index>
+      <Pronote>TES</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du Lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgrTES</Group>
+   </Index>
+   <Index>
+      <Pronote>TSB</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgrTSB</Group>
+   </Index>
+</Configuration>
