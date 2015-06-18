@@ -15,8 +15,8 @@
 Set fso = CreateObject("Scripting.FileSystemObject")
 Set objExcel = CreateObject("Excel.Application")
 
-xmlpath = fso.BuildPath("C:\users\vboissiere\Google Drive\", "index.xml")
-excelpath = "C:\users\vboissiere\Google Drive\pronote script\eleve juin 2015.xlsx"
+xmlpath = fso.BuildPath("C:\script\", "index.xml")
+excelpath = "C:\script\eleve juin 2015.xlsx"
 myLdapPath = "DC=claudel,DC=lan"
 
 'Paths in order to create a new student
@@ -281,90 +281,51 @@ End Sub
 
 'Trigger actions based on the Excel data and the position of the student and its category (active vs old)
 Sub studentExists(studentCurrentClass, studentName, indexes, posFound, IsOld, student, currentLine)
-
-	'Student exist but class is null, move it the old path
+	
+	'student with no class will no be updated but only moved to the old path
 	If studentCurrentClass = "" Then
-		'move only if not already found in old path
 		If posFound < indexes.Item("uniqueActiveDirectory").Count - UBound(oldSubDirectories) - 2 Then
-			
-			'TODO : CHECK IF IT IS WORKING FOR THURSDAY
-			Set group = student.Groups
-			Dim lastGroup
-			nbGroupPath = 0
-			
-			For Each g In group
-				Set lastGroup = g
-				nbGroup = nbGroup + 1
-			Next
-			
-			If nbGroup <= 1 Then
-				lastGroupPath = LCase(lastGroup.ADsPath)
-			End If
-			
-			If nbGroup <= 1 Then
-			
-				groupPath = getGroupPath(oldGroupPath)
-
-				Set objGroup = getActiveOUDDirectoryFromRaw(groupPath, groupPath)
-				
-				If Not objGroup Is Nothing And Not logModeOnly Then
-				
-					'delete old Group if exists
-					If nbGroup = 1 Then
-	        			lastGroup.remove(student.ADsPath)
-	        		End If
-	        	
-					objGroup.add(student.ADsPath)
-				End If
-			Else If nbGroup > 1 Then
-				textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
-				End If
-			End If
-			
-			
-			Call moveStudent(student, indexes.Item("uniqueActiveDirectory").Item(indexes.Item("uniqueActiveDirectory").Count - 1))
+			Call moveStudent(student, indexes.Item("uniqueActiveDirectory").Item(indexes.Item("uniqueActiveDirectory").Count - 1), True)
 		End If
-		Exit Sub
-	End If
+	Else	
+		posShouldBeIn = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
 		
+		'Check if found in old or active. Last is the old directory
+		If posFound >= indexes.Item("uniqueActiveDirectory").Count - UBound(oldSubDirectories) - 2 Then
 		
-	posShouldBeIn = indexes.Item("pronote").IndexOf(studentCurrentClass, 0)
-	
-	'Check if found in old or active. Last is the old directory
-	If posFound >= indexes.Item("uniqueActiveDirectory").Count - UBound(oldSubDirectories) - 2 Then
-	
-		
-		'Move student if should be in active path and is in old path
-		If Not IsOld Then
-			Call updateStudent(student, currentLine, indexes, studentCurrentClass)
-			Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn))
-			Exit Sub
-		End If
-		
-		Call updateStudent(student, currentLine, indexes, studentCurrentClass)
-		
-	Else
-		'Active path
-		
-		If IsOld Then
-			Call updateStudent(student, currentLine, indexes, studentCurrentClass)
-			Call moveStudent(student, indexes.Item("uniqueActiveDirectory").Item(indexes.Item("uniqueActiveDirectory").Count - 1))
-			Exit Sub
-		Else
-			'Good category
 			
-			pronoteADIndex = indexes.Item("uniqueActiveDirectory").Item(posFound)
-		
-			'Wrong section
-			If indexes.Item("activeDirectory").Item(posShouldBeIn) <> pronoteAdIndex Then
+			'Move student if should be in active path and is in old path
+			If Not IsOld Then
 				Call updateStudent(student, currentLine, indexes, studentCurrentClass)
-				Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn))
+				Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn), False)
 				Exit Sub
 			End If
+			
+			'Call updateStudent(student, currentLine, indexes, studentCurrentClass)
+			
+		Else
+			'Active path
+			
+			If IsOld Then
+				Call updateStudent(student, currentLine, indexes, studentCurrentClass)
+				Call moveStudent(student, indexes.Item("uniqueActiveDirectory").Item(indexes.Item("uniqueActiveDirectory").Count - 1), True)
+				Exit Sub
+			Else
+				'Good category
+				
+				pronoteADIndex = indexes.Item("uniqueActiveDirectory").Item(posFound)
+			
+				'Wrong section
+				If indexes.Item("activeDirectory").Item(posShouldBeIn) <> pronoteAdIndex Then
+					Call updateStudent(student, currentLine, indexes, studentCurrentClass)
+					Call moveStudent(student, indexes.Item("activeDirectory").Item(posShouldBeIn), False)
+					Exit Sub
+				End If
+			End If
+			
+			Call updateStudent(student, currentLine, indexes, studentCurrentClass)
+			
 		End If
-		
-		Call updateStudent(student, currentLine, indexes, studentCurrentClass)
-		
 	End If
 
 	
@@ -458,7 +419,43 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 End Sub
 
 'Move student to the new right path
-Sub moveStudent(student, friendlyPath)
+Sub moveStudent(student, friendlyPath, toOld)
+
+	If toOld Then
+		Set group = student.Groups
+		Dim lastGroup
+		nbGroupPath = 0
+		
+		For Each g In group
+			Set lastGroup = g
+			nbGroup = nbGroup + 1
+		Next
+		
+		If nbGroup <= 1 Then
+			lastGroupPath = LCase(lastGroup.ADsPath)
+		End If
+		
+		If nbGroup <= 1 Then
+		
+			groupPath = getGroupPath(oldGroupPath)
+	
+			Set objGroup = getActiveOUDDirectoryFromRaw(groupPath, groupPath)
+			
+			If Not objGroup Is Nothing And Not logModeOnly Then
+			
+				'delete old Group if exists
+				If nbGroup = 1 Then
+	    			lastGroup.remove(student.ADsPath)
+	    		End If
+	    	
+				objGroup.add(student.ADsPath)
+			End If
+		Else If nbGroup > 1 Then
+			textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
+			End If
+		End If
+		
+	End If
 	
 	Set ou = getActiveOUDirectory(friendlyPath)
 	
