@@ -1,4 +1,5 @@
 '____________________________________________________________________________________________________________
+
 '
 ' PROGRAM TO SYNC PRONOTE WITH ACTIVE DIRECTORY
 '
@@ -17,12 +18,15 @@ Set objExcel = CreateObject("Excel.Application")
 
 xmlpath = fso.BuildPath("C:\script\", "index.xml")
 excelpath = "C:\script\eleve juin 2015.xlsx"
+logFilesDirectory = "C:\script\"
 myLdapPath = "DC=claudel,DC=lan"
 
 'Paths in order to create a new student
 profilepath = "\\claudel.lan\partage\profils$\" '(+login added later)
 homeDirectory = "\\claudel.lan\partage\utilisateurs$\"
 homeDrive = "P"
+emailLoginDomain = "@claudel.org"
+emailLoginLan = "@claudel.lan"
 
 'Start foreach excel line with this number
 excelLine = 2
@@ -72,7 +76,7 @@ logModeOnly = True
 Do While True
 
 	'Display the menu
-	WScript.Echo vbLf & "1. Sync" & vbLf & "2. Reset Password" & vbLf & "3. Display index" & vbLf & "4. Add index" & vbLf & "5. Remove index" & vbLf & "0. Exit"
+	WScript.Echo vbCrLf & "1. Sync" & vbCrLf & "2. Reset Password" & vbCrLf & "3. Display index" & vbCrLf & "4. Add index" & vbCrLf & "5. Remove index" & vbCrLf & "0. Exit"
 	
 	choice = askInputNumber()
 	
@@ -169,6 +173,7 @@ Sub sync()
 	objCommand.ActiveConnection = objConnection
 
 	WScript.Echo "Updating students..."
+
 	
 	'Foreach students in excel
 	Do Until objExcel.Cells(currentLine, excelFirstNameCol).Value = ""
@@ -194,34 +199,54 @@ Sub sync()
 	WScript.Echo "Done!"
 	
 	If logModeOnly Then
-		WScript.Echo vbLf & vbLf & "LOG MODE ONLY - NO CHANGE IN ACTIVE DIRECTORY"
-		WScript.Echo "------------------------------------------------" & vbLf
+		WScript.Echo vbCrLf & vbCrLf & "LOG MODE ONLY - NO CHANGE IN ACTIVE DIRECTORY"
+		WScript.Echo "------------------------------------------------" & vbCrLf
 	End If
 	
-	WScript.Echo vbLf & "STUDENTS UPDATED : " & vbLf
-	Call displayTable(textLogUpdated)
+	LogFileText = ""
 	
-	WScript.Echo vbLf & "STUDENTS MOVED : " & vbLf
+	LogFileText = LogFileText & vbCrLf & "STUDENTS UPDATED : " &vbCrLf& vbCrLf
+	LogFileText = LogFileText & displayTable(textLogUpdated)
+	
+	LogFileText = LogFileText & vbCrLf & "STUDENTS MOVED : " & vbCrLf & vbCrLf
 	'Add headers for the table
-	Call displayTable(textLogMoved)
+	LogFileText = LogFileText & displayTable(textLogMoved)
 	
-	WScript.Echo vbLf & "STUDENTS CREATED : " & vbLf
-	Call displayTable(textLogCreated)
+	LogFileText = LogFileText & vbCrLf & "STUDENTS CREATED : " & vbCrLf & vbCrLf
+	LogFileText = LogFileText & displayTable(textLogCreated)
 	
-	WScript.Echo vbLf & "LIST OF WARNINGS : "
-	WScript.Echo textLogWarning
+	LogFileText = LogFileText & vbCrLf & "LIST OF WARNINGS : " & vbCrLf
+	LogFileText = LogFileText & textLogWarning & vbCrLf
 	
-	WScript.Echo vbLf & "LIST OF ERROR : "
-	WScript.Echo textLogError
+	LogFileText = LogFileText & vbCrLf & "LIST OF ERROR : " & vbCrLf
+	LogFileText = LogFileText & textLogError & vbCrLf
 	
-	WScript.Echo vbLf & "LIST OF PEOPLE NOT FOUND IN PRONOTE : " & vbLf
+	LogFileText = LogFileText & vbCrLf & "LIST OF PEOPLE NOT FOUND IN PRONOTE : " & vbCrLf & vbCrLf
+	
 	
 	'All students that match the class but that are not in ProNote
 	For Each cn In activeDirectoryGUID
 		begin = InStr(cn, "=") + 1
-		last = InStr(cn, ",")
-		WScript.Echo Mid(cn, begin, last-begin)
+		last = InStr(cn, ",") 
+		LogFileText = LogFileText & Mid(cn, begin, last-begin) & vbCrLf
 	Next
+	
+	WScript.Echo LogFileText
+	
+	'Create log file in production
+	If Not logModeOnly Then
+	
+		Set objFSO_log =CreateObject("Scripting.FileSystemObject")
+		
+		' Write in a log file
+		outFile_log=logFilesDirectory & "pronote script " &  Day(Date) & "_" & Month(Date) & "_" & _ 
+		Year(Date) & "_" & Hour(Time) & "_" & Minute(Time) & "_" & Second(Time) & ".txt"
+		Set objFile_log = objFSO_log.CreateTextFile(outFile_log,True)
+		objFile_log.Write LogFileText & vbCrLf
+		objFile_log.Close
+	
+	End If
+
 	
 	'Close connection to AD
 	objConnection.Close
@@ -259,6 +284,27 @@ Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, student
     		If Not student Is Nothing Then
     			'Remove from index
     			activeDirectoryGUID.remove(LCase(student.ADspath))
+    			
+    			'login@claudel.lan => login, display warning if this login different than real login
+				posEmailLan = InStr(student.userPrincipalName, emailLoginLan)
+				posEmailDomain = InStr(student.mail, emailLoginDomain)
+
+				If posEmailLan > 1 And posEmailDomain > 1 Then
+					loginByLan = Mid(student.userPrincipalName, 1, posEmailLan - 1)
+					loginByDomain = Mid(student.mail, 1, posEmailDomain - 1)
+					'WScript.Echo "usr principal name " & loginByDomain &" compare to " & student.sAMAccountName
+					
+					'Not the same login
+					If student.sAMAccountName <> loginByLan Then
+						textLogWarning = textLogWarning & vbCrLf &  "WARNING : " & student.cn & " has two different login : " & _
+						student.sAMAccountName & " and " & loginByLan & " (" & student.userPrincipalName & ")"
+					End If
+					If student.sAMAccountName <> loginByDomain Then
+						textLogWarning = textLogWarning & vbCrLf &  "WARNING : " & student.cn & " has two different login : " & _
+						student.sAMAccountName & " and " & loginByDomain & " (" & student.mail & ")"
+					End If
+				End If
+	
 		    	Call studentExists(studentCurrentClass, studentName, indexes, i, studentDate <> "" And DateDiff("d",Now, studentDate) < dayDiff, student, currentLine)
 		    	'WScript.Echo student.Cn
 		    End If
@@ -266,7 +312,7 @@ Sub searchStudent(objCommand, studentName, indexes, studentCurrentClass, student
 		    objRecordSet.Close
 		    Exit Sub
 		Else If numberOfMatch > 1 Then
-			textLogWarning = textLogWarning & vbLf &  "WARNING : More than one match for " & studentName & " (User ignored)"
+			textLogWarning = textLogWarning & vbCrLf &  "WARNING : More than one match for " & studentName & " (User ignored)"
 			Exit Sub
 			End If
 		End If
@@ -337,11 +383,14 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 	firstName = objExcel.Cells(currentLine,excelFirstNameCol).Text
 	lastName = objExcel.Cells(currentLine,excelLastNameCol).Text
 	className = objExcel.Cells(currentLine,excelClassNameCol).Text
-	email = objExcel.Cells(currentLine,excelEmailCol).Text
+	'Get login for new user
+	login = getLogin(firstName, lastName)
+
+	email = login & "@claudel.org"
 	nationalNumber = objExcel.Cells(currentLine,excelNationalNumber).Text
 	
 	If InStr(email, "claudel.org") = 0 Then
-		textLogWarning = textLogWarning & vbLf &  "WARNING : " & firstName & " " & lastName & _
+		textLogWarning = textLogWarning & vbCrLf &  "WARNING : " & firstName & " " & lastName & _
 				" has the email " & email & " which is not claudel.org"
 	End If
 	
@@ -351,8 +400,6 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 	'Get active directory friendly path
 	friendlyPath = indexes.Item("activeDirectory").Item(activeDirectoryPos)
 	
-	'Get login for new user
-	login = getLogin(firstName, lastName)
 	
 	If Not logModeOnly Then
 		
@@ -370,9 +417,11 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 			End If
 			objUser.description = className
 			objUser.displayName = firstName & " " & lastName & " " & className
-			objUser.userPrincipalName = login
+			objUser.userPrincipalName = login & emailLoginLan
 			objUser.sAMAccountName = login
-			objUser.physicalDeliveryOfficeName = nationalNumber
+			If nationalNumber <> "" Then
+				objUser.physicalDeliveryOfficeName = nationalNumber
+			End If
 			objUser.profilePath = profilepath & login
 			objUser.homeDrive = homeDrive
 			objUser.homeDirectory = homedirectory & login
@@ -385,8 +434,8 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 			objUser.setPassword(defaultPassword)
 			
 			If Err.Number <> 0 Then
-				textLogError = textLogError & vbLf &  "ERROR : Password does not match active Directory requirements." & _ 
-				vbLf & firstName & " " & lastName & " student created with no password but account is disabled."
+				textLogError = textLogError & vbCrLf &  "ERROR : Password does not match active Directory requirements." & _ 
+				vbCrLf & firstName & " " & lastName & " student created with no password but account is disabled."
 			End If
 			
 			objUser.AccountDisabled=False
@@ -431,7 +480,7 @@ Sub moveStudent(student, friendlyPath, toOld)
 			nbGroup = nbGroup + 1
 		Next
 		
-		If nbGroup <= 1 Then
+		If nbGroup = 1 Then
 			lastGroupPath = LCase(lastGroup.ADsPath)
 		End If
 		
@@ -451,7 +500,7 @@ Sub moveStudent(student, friendlyPath, toOld)
 				objGroup.add(student.ADsPath)
 			End If
 		Else If nbGroup > 1 Then
-			textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
+			textLogWarning = textLogWarning & vbCrLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
 			End If
 		End If
 		
@@ -471,7 +520,6 @@ Sub moveStudent(student, friendlyPath, toOld)
 		
 		'Move student
 		If Not logModeOnly Then
-			WScript.Echo "move here " & student.ADsPath
 			ou.MoveHere student.ADsPath, vbNullString
 	    End If
 		
@@ -511,18 +559,20 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 		Set lastGroup = g
 		nbGroup = nbGroup + 1
 	Next
-	
-	If nbGroup <= 1 Then
+	'WScript.Echo firstName & " " & lastName
+	If nbGroup = 1 Then
 		lastGroupPath = LCase(lastGroup.ADsPath)
 	End If
 	
 	textLog = ""
 	
 	If nbGroup <= 1 And StrComp(shouldBeInGroupPath, lastGroupPath, 1) <> 0 Then
-		column.Item(5) = shouldBeInGroupPath
+		begin = InStr(shouldBeInGroupPath, "=") + 1
+		last = InStr(shouldBeInGroupPath, ",") 
+		column.Item(5) = Mid(shouldBeInGroupPath, begin, last-begin)
 		nbModif = nbModif + 1
 	Else If nbGroup > 1 Then
-			textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
+			textLogWarning = textLogWarning & vbCrLf &  "WARNING : " & student.cn & " has more than 1 group. No group changed."
 		End If
 	End If
 	
@@ -543,36 +593,33 @@ Sub updateStudent(student, currentLine, indexes, studentCurrentClass)
 		nbModif = nbModif + 1
 	End If
 	
-	
 
 	If email = "#N/A" Then
-		textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has no email set on Pronote, active directory email untouched"		
+		textLogWarning = textLogWarning & vbCrLf &  "WARNING : " & student.cn & " has no email set on Pronote, active directory email untouched"		
 	Else If email <> student.mail Then
 		If InStr(email, "claudel.org") <> 0 Then
 			column.Item(3) = email
 			nbModif = nbModif + 1
 		Else
-			textLogWarning = textLogWarning & vbLf &  "WARNING : " & student.cn & " has the email " & email & " which is not claudel.org"		
+			textLogWarning = textLogWarning & vbCrLf &  "WARNING : " & student.cn & " has the email " & email & " which is not claudel.org"		
 		End If
 		End If
 	End If
-
-	
-	'If nationalNumber <> student.physicalDeliveryOfficeName Then
-	'	textLog = textLog & " current National Number: " & nationalNumber
-	'End If
 	
 	'save modification only if log mode Only is false
 	If Not logModeOnly Then
 		student.firstName = firstName
 		student.lastName = lastName
 		student.description = className
-		student.physicalDeliveryOfficeName = nationalNumber
+		If nationalNumber <> "" Then
+			student.physicalDeliveryOfficeName = nationalNumber
+		End If
 		
 		'No warning on the email
 		If email <> "#N/A" And InStr(email, "claudel.org") <> 0 Then
 			student.mail = email
 		End If
+		
 		
 		'Change group
 		If nbGroup <= 1 And StrComp(shouldBeInGroupPath, lastGroupPath, 1) <> 0 Then
@@ -614,9 +661,9 @@ End Sub
 'Reset password in an active Directory Path for student of the rightClass
 Sub resetPasswordIn(activeDirectoryPath, password, studentClass, askReset)
 
-	WScript.Echo vbLf & vbLf & "The student of the class " & studentClass & " will be asked to change their passwords"
+	WScript.Echo vbCrLf & vbCrLf & "The student of the class " & studentClass & " will be asked to change their passwords"
 
-	WScript.Echo vbLf & "LIST OF USERS UPDATED WITH NEW PASSWORD : " & vbLf	
+	WScript.Echo vbCrLf & "LIST OF USERS UPDATED WITH NEW PASSWORD : " & vbCrLf	
 	
 	Set ou = getActiveOUDirectory(activeDirectorypath)
 	
@@ -631,6 +678,8 @@ Sub resetPasswordIn(activeDirectoryPath, password, studentClass, askReset)
 					Err.Clear
 					If askReset Then
 						student.pwdLastSet=0
+					Else
+						student.pwdLastSet=-1
 					End If
 					student.setPassword(password)
 					student.setInfo
@@ -639,7 +688,7 @@ Sub resetPasswordIn(activeDirectoryPath, password, studentClass, askReset)
 					If Err.Number = 0 Then
 						WScript.Echo student.cn & " has now the password " & password
 					Else
-						displayError("Password does not match active Directory requirements" & vbLf & "Aborted!")
+						displayError("Password does not match active Directory requirements" & vbCrLf & "Aborted!")
 						Exit Sub
 					End If
 					
@@ -680,7 +729,7 @@ Sub resetPassword()
 				WScript.Echo "Type the password you want to set for the " & theClass & " class"
 				password = WScript.StdIn.ReadLine
 				If password <> "" Then
-					WScript.Echo vbLf & "Do you want to ask the class " & theClass & " to change the default password when they log in ? (y/n)"
+					WScript.Echo vbCrLf & "Do you want to ask the class " & theClass & " to change the default password when they log in ? (y/n)"
 					Call resetPasswordIn(activeDirectoryPath, password, studentClass, askConfirmation())
 				Else
 					displayError("Empty password!")
@@ -735,7 +784,7 @@ Function getLogin(firstName, lastName)
 		'search query
 		objCommand.CommandText = _
 			    "<LDAP://" & myLdapPath & _
-			     ">;(&(objectCategory=person)(objectClass=user)(sAMAccountName=" & login & nbText & "*));cn;subtree"
+			     ">;(&(objectCategory=person)(objectClass=user)(sAMAccountName=*" & login & nbText & "*));cn;subtree"
 			  
 		Set objRecordSet = objCommand.Execute
 				 
@@ -815,10 +864,10 @@ Function getActiveOUDDirectoryFromRaw(rawPath, errPath)
 		Case 0
 		    Set getActiveOUDDirectoryFromRaw = OUobject
 		Case &h80072030
-		    displayError("OU doesn't exist" & vbLf & vbLf & "Full path : " & errPath & vbLf)
+		    displayError("OU doesn't exist" & vbCrLf & vbCrLf & "Full path : " & errPath & vbCrLf)
 		    Set getActiveOUDDirectoryFromRaw = Nothing
 		Case Else
-		    displayError("Adding OU failed because OU not valid. Error code : "& Err.Number & vbLf & vbLf & "Full path : " & errPath & vbLf)
+		    displayError("Adding OU failed because OU not valid. Error code : "& Err.Number & vbCrLf & vbCrLf & "Full path : " & errPath & vbCrLf)
 		    Set getActiveOUDDirectoryFromRaw = Nothing
 		End Select
 	Else
@@ -911,17 +960,22 @@ Sub displayConfiguration()
 	'Create first row
 	Set rows = CreateObject("System.Collections.ArrayList")
 	Set headers = CreateObject("System.Collections.ArrayList")
+	headers.Add "ID"
 	headers.Add "Class"
 	headers.Add "Active Directory Path"
 	headers.Add "Active Directory Group Path"
 	rows.Add headers
 	
+	id = 0
+	
 	'Foreach XML file
 	For Each Index In nodes
 	
 		Set column = CreateObject("System.Collections.ArrayList")
-	
+		id = id + 1
+		
 		'Get tag name in the XML
+		column.Add CStr(id)
 		column.Add Index.getElementsByTagName("Pronote")(0).text
 		column.Add Index.getElementsByTagName("ActiveDirectory")(0).text
 		column.Add Index.getElementsByTagName("Group")(0).text
@@ -929,7 +983,7 @@ Sub displayConfiguration()
 		rows.Add column
 	Next
 	
-	displayTable(rows)
+	WScript.Echo displayTable(rows)
 
 	
 End Sub
@@ -941,13 +995,13 @@ Sub writeConfiguration()
 	WScript.Echo "Name of the class in Pronote (column " & excelClassNameCol & ") : "
 	pronote = WScript.StdIn.ReadLine
 	
-	WScript.Echo vbLf & "Corresponding path in Active Directory : "
+	WScript.Echo vbCrLf & "Corresponding path in Active Directory : "
 	activeDirectory = WScript.StdIn.ReadLine
 	
-	WScript.Echo vbLf & "Corresponding group in Active Directory : "
+	WScript.Echo vbCrLf & "Corresponding group in Active Directory : "
 	group = WScript.StdIn.ReadLine
 	
-	WScript.Echo vbLf
+	WScript.Echo vbCrLf
 	
 	'Validate data
 	If validateIndex(pronote, activeDirectory) Then
@@ -1149,7 +1203,7 @@ End Function
 
 'Display error message
 Sub displayError(message)
-	WScript.Echo vbLf & "ERROR : " & message & vbLf
+	WScript.Echo vbCrLf & "ERROR : " & message & vbCrLf
 End Sub
 
 'There is no max function in VBS
@@ -1285,10 +1339,11 @@ Function getFriendlyPathFromOU(rawPath)
 End Function
 
 'Display table based on an array list of array list
-Sub displayTable(rows)
+Function displayTable(rows)
 
 	If rows.Count <= 1 Then
-		Exit Sub
+		displayTable= ""
+		Exit Function
 	End If
 
 	'Compute length to know max length of every columns
@@ -1312,19 +1367,23 @@ Sub displayTable(rows)
 		size = size + m
 	Next
 	border = generateTextBorder(size + 5 * rows.Item(0).Count)
+	
+	tableText = ""
 
-	WScript.Echo border
+	tableText = tableText & border & vbCrLf
 	Dim display
 	For Each column In rows
 		display = "| "
 		For i = 0 To column.Count - 1 Step 1
 			display = display & column.Item(i) & getTableSpace(column.Item(i), maxLength.Item(i) + 2) & " | "
 		Next
-		WScript.Echo display
-		WScript.Echo border
+		tableText = tableText & display & vbCrLf
+		tableText = tableText & border & vbCrLf
 	Next
+	
+	displayTable = tableText
 
-End Sub
+End Function
 
 'Clear arrayList and init header
 Sub generateHeaders()

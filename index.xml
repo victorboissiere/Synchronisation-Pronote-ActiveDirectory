@@ -61,6 +61,86 @@
       <Group>utilisateurs/eleves/eleves du College/Groupes des eleves du College/sgr6V</Group>
    </Index>
    <Index>
+      <Pronote>5B</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/groupes des eleves du college/sgr5B</Group>
+   </Index>
+   <Index>
+      <Pronote>5R</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/Groupes des eleves du College/sgr5R</Group>
+   </Index>
+   <Index>
+      <Pronote>5V</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/Groupes des eleves du College/sgr5V</Group>
+   </Index>
+   <Index>
+      <Pronote>4B</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/groupes des eleves du college/sgr4B</Group>
+   </Index>
+   <Index>
+      <Pronote>4R</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/Groupes des eleves du College/sgr4R</Group>
+   </Index>
+   <Index>
+      <Pronote>4V</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/Groupes des eleves du College/sgr4V</Group>
+   </Index>
+   <Index>
+      <Pronote>3B</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/groupes des eleves du college/sgr3B</Group>
+   </Index>
+   <Index>
+      <Pronote>3R</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/Groupes des eleves du College/sgr3R</Group>
+   </Index>
+   <Index>
+      <Pronote>3V</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du College</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du College/Groupes des eleves du College/sgr3V</Group>
+   </Index>
+   <Index>
+      <Pronote>2B</Pronote>
+      <ActiveDirectory>Utilisateurs/eleves/eleves du lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgr2B</Group>
+   </Index>
+   <Index>
+      <Pronote>2R</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du Lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgr2R</Group>
+   </Index>
+   <Index>
+      <Pronote>2V</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgr2V</Group>
+   </Index>
+   <Index>
+      <Pronote>1L</Pronote>
+      <ActiveDirectory>Utilisateurs/eleves/eleves du lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgr1L</Group>
+   </Index>
+   <Index>
+      <Pronote>1ES</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/eleves du Lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgr1ES</Group>
+   </Index>
+   <Index>
+      <Pronote>1SB</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgr1SB</Group>
+   </Index>
+   <Index>
+      <Pronote>1SR</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgr1SR</Group>
+   </Index>
+   <Index>
       <Pronote>TL</Pronote>
       <ActiveDirectory>Utilisateurs/eleves/eleves du lycee</ActiveDirectory>
       <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgrTL</Group>
@@ -74,5 +154,10 @@
       <Pronote>TSB</Pronote>
       <ActiveDirectory>utilisateurs/eleves/Eleves du lycee</ActiveDirectory>
       <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgrTSB</Group>
+   </Index>
+   <Index>
+      <Pronote>TSR</Pronote>
+      <ActiveDirectory>utilisateurs/eleves/Eleves du lycee</ActiveDirectory>
+      <Group>utilisateurs/eleves/eleves du lycee/groupes des eleves du lycee/sgrTSR</Group>
    </Index>
 </Configuration>
