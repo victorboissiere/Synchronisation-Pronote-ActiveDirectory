@@ -463,6 +463,7 @@ Sub createStudent(currentLine, indexes, studentCurrentClass)
 	column.Add firstName & " " & lastName
 	column.Add friendlyPath
 	column.Add login
+	column.Add email
 	textLogCreated.Add column
 	
 End Sub
@@ -754,7 +755,7 @@ End Sub
 '-------------------------------------------------------------------------------------------------------------
 
 'Get login based on student name
-Function getLogin(firstName, lastName)
+Function getLogin(ByVal firstName, ByVal lastName)
 
 	'Regex pattern to get a nice login
 	Set objReg = CreateObject("VBScript.RegExp")
@@ -1402,6 +1403,7 @@ Sub generateHeaders()
 	textLogCreatedHeaders.Add "Student"
 	textLogCreatedHeaders.Add "Path"
 	textLogCreatedHeaders.Add "Login"
+	textLogCreatedHeaders.Add "Email"
 	textLogCreated.Add textLogCreatedHeaders
 	
 	textLogUpdated.clear
